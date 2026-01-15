@@ -25,7 +25,7 @@ void flyback_init(void) {
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << FLYBACK_EN_GPIO),  //Config al pin 21 
         .mode = GPIO_MODE_OUTPUT,  //output
-        .pull_up_en = 1 // Por seguridad, el pin a 3.3V. Apaga el flybackel 
+        .pull_up_en = 1 // Por seguridad, el pin a 3.3V. Apaga el flyback
     };
     gpio_config(&io_conf);
     gpio_set_level(FLYBACK_EN_GPIO, 1); // Empezamos apagados
@@ -44,5 +44,8 @@ void set_DAC_value(uint16_t value) {
     i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR, data, 2, 100 / portTICK_PERIOD_MS); //Time out de 100 ms, por si el bus está bloqueado
 }
 void flyback_enable(bool enable) {
-    gpio_set_level(FLYBACK_EN_GPIO, !enable); // Empezamos apagados
+    gpio_set_level(FLYBACK_EN_GPIO, !enable); // Encendido del Flyback
+}
+void flyback_stop() {
+    gpio_set_level(FLYBACK_EN_GPIO, 1); // Encendido del Flyback
 }

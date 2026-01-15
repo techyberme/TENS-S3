@@ -16,7 +16,7 @@ void app_main(void) {
     // Inicio ADC
     current_monitor_init();
     // Inicio Flyback
-    //flyback_init(); 
+    flyback_init(); 
     
     //Deadtime de 5us (50 ticks a 10MHz)
     hbridge_init(50);

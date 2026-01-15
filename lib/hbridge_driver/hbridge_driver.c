@@ -7,11 +7,24 @@
 #include "driver/mcpwm_prelude.h"
 
 static const char *TAG = "H-Bridge"; 
+static mcpwm_gen_handle_t generators[2];
 static mcpwm_timer_handle_t timer = NULL;  //Base de tiempo
-// static mcpwm_oper_handle_t oper = NULL;  //Bloque lógico
-// static mcpwm_cmpr_handle_t cmpr = NULL;  //Comparador
-// static mcpwm_gen_handle_t gen_a = NULL;
-// static mcpwm_gen_handle_t gen_b = NULL;
+
+// Timer 100 Hz
+static void burst_callback(void* arg) {
+    //Inicialización variable
+    static bool output_en = true;
+    if (output_en) {
+        // Habilitación salida
+        mcpwm_generator_set_force_level(generators[0], -1, true); //el true indica que solo aquí puedo reanudar
+        mcpwm_generator_set_force_level(generators[1], -1, true);
+    } else {
+        // Silencio
+        mcpwm_generator_set_force_level(generators[0], 0, true);
+        mcpwm_generator_set_force_level(generators[1], 0, true);
+    }
+    output_en = !output_en;
+}
 void hbridge_init(uint32_t deadtime_ticks)
 {
    // TIMER Definition
@@ -50,7 +63,6 @@ void hbridge_init(uint32_t deadtime_ticks)
 
     // -----Generator-----//
     ESP_LOGI(TAG, "Create generators");
-    mcpwm_gen_handle_t generators[2];
     mcpwm_generator_config_t gen_config = {};
     const int gen_gpios[2] = {HBRIDGE_GPIO_A,HBRIDGE_GPIO_B}; //recommended pins 
     for (int i=0;i<=1;i++){
@@ -79,6 +91,20 @@ void hbridge_init(uint32_t deadtime_ticks)
       .flags.invert_output = true,
     };
     ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[0],generators[1], &dt_config));  //generator 0 controls generator 1 so we don't need to define gen. 1
+    // --- CONFIGURACIÓN DEL BURST DE 100 HZ ---
+    //Puntero a la interrupción
+    const esp_timer_create_args_t periodic_timer_args = {
+        .callback = &burst_callback,
+        .name = "tens_burst"
+    };
+    //Identificación temporizador
+    esp_timer_handle_t burst_timer;
+    //Creación temporizador
+    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &burst_timer));
+    
+    // 100 Hz -> Periodo 10ms. (5000us)
+    ESP_ERROR_CHECK(esp_timer_start_periodic(burst_timer, 5000));
+
     ESP_LOGI(TAG, "Enable and start timer");
     ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));

@@ -10,5 +10,6 @@
 void flyback_init(void);
 void set_DAC_value(uint16_t value); // 0 a 4095
 void flyback_enable(bool enable);
+void flyback_stop(void);
 
 #endif
