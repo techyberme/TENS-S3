@@ -5,7 +5,8 @@
 #include "freertos/FreeRTOS.h" 
 #include "freertos/semphr.h" //gestiona la sincro entre partes del código
 #include "freertos/task.h"
-#define ADC_ATTEN    ADC_ATTEN_DB_0
+#include "esp_log.h"
+#define ADC_ATTEN    ADC_ATTEN_DB_12
 
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
@@ -23,6 +24,55 @@ static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle,
     //FALSE: Mínima Prioridad
     return (mustYield == pdTRUE);
 }
+
+void monitor_task(void *pvParameters) {
+    uint8_t result[256]; // Coincide con conv_frame_size
+    uint32_t ret_num = 0;  //la función de lectura lo rellena con la longitud del buffer
+
+    while (1) {
+        // Bloqueo eficiente CPU, (…, tiempo de espera eterno)
+        if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)){
+
+            // Lectura Buffer que ha llegado
+            esp_err_t ret = adc_continuous_read(handle, result, 256, &ret_num, 0);
+            
+            if (ret == ESP_OK) {
+                //lectura de corriente pico
+                uint32_t max_raw = 0;
+                //lectura de corriente media
+                uint32_t sum_raw = 0;
+
+                // Iteramos sobre las muestras recibidas (cada una ocupa 4 bytes en S3)
+                for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
+                    adc_digi_output_data_t *p = (void*)&result[i]; //si no va, poner (void*)&result[i]
+                    uint32_t val = p->type2.data;           //me quedo solo con los 12 bits de la medida
+                    //pico de corriente
+                    if (val > max_raw) max_raw = val; 
+                    sum_raw += val;
+
+                }
+                //corriente media
+                uint32_t avg_raw = sum_raw*4/ret_num;
+                // Ajuste de mediciones a la curva de calibracións
+                int max_volt = 0;
+                int avg_volt=0;
+                adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt);
+                adc_cali_raw_to_voltage(cali_handle, avg_raw, &avg_volt);
+                float max_current = (float)max_volt / 10.0f; // Rsense = 10 ohm
+                float avg_current = (float)avg_volt / 10.0f; 
+                // SEGURIDAD CRÍTICA
+                if (max_current > 80.0f) { // Ejemplo: Límite 50mA
+                    // AQUÍ: Función para apagar el Flyback y el H-Bridge inmediatamente
+                    ESP_LOGE(TAG, "¡SOBRECORRIENTE DETECTADA! %.2f mA", max_current);
+                }
+                
+                ESP_LOGI(TAG, "I_peak: %.2f mA | I_avg: %.2f mA", max_current, avg_current);
+                
+        }
+        }
+        vTaskDelay(1);
+    }
+}
 void current_monitor_calibrate_init(void) {
     ESP_LOGI(TAG, "Configurando esquema de calibración...");
     adc_cali_curve_fitting_config_t cali_config = {
@@ -35,7 +85,7 @@ void current_monitor_calibrate_init(void) {
     esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle);
     
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Error al crear esquema de calibración. ¿eFuses no grabados?");
+        ESP_LOGI(TAG, "Error al crear esquema de calibración. ¿eFuses no grabados?");
     }
 }
 // Tarea ADC
@@ -64,7 +114,7 @@ void current_monitor_init(void) {
         .atten = ADC_ATTEN,
         .channel = ADC_CHANNEL_2, // GPIO 3 en S3
         .unit = ADC_UNIT_1,
-        .bit_width = ADC_BITWIDTH_DEFAULT,
+        .bit_width = ADC_BITWIDTH_12,
     };
 
     config.pattern_num = 1;    //solo un canal ADC
@@ -79,50 +129,4 @@ void current_monitor_init(void) {
     xTaskCreate(monitor_task, "Monitor", 4096, NULL, 10, &s_monitor_task_handle);
     // Arrancar la captación automática
     ESP_ERROR_CHECK(adc_continuous_start(handle));
-}
-
-void monitor_task(void *pvParameters) {
-    uint8_t result[256]; // Coincide con conv_frame_size
-    uint32_t ret_num = 0;  //la función de lectura lo rellena con la longitud del buffer
-
-    while (1) {
-        // Bloqueo eficiente CPU, (…, tiempo de espera eterno)
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-        // Lectura Buffer que ha llegado
-        esp_err_t ret = adc_continuous_read(handle, result, 256, &ret_num, 0);
-        
-        if (ret == ESP_OK) {
-            //lectura de corriente pico
-            uint32_t max_raw = 0;
-            //lectura de corriente media
-            uint32_t sum_raw = 0;
-
-            // Iteramos sobre las muestras recibidas (cada una ocupa 4 bytes en S3)
-            for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
-                adc_digi_output_data_t *p = (void*)&result[i]; //si no va, poner (void*)&result[i]
-                uint32_t val = p->type2.data;           //me quedo solo con los 12 bits de la medida
-                //pico de corriente
-                if (val > max_raw) max_raw = val; 
-                sum_raw += val;
-
-            }
-            //corriente media
-            uint32_t avg_raw = sum_raw*4/ret_num;
-            // Ajuste de mediciones a la curva de calibracións
-            int max_volt = 0;
-            int avg_volt=0;
-            adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt);
-            adc_cali_raw_to_voltage(cali_handle, avg_raw, &avg_volt);
-            float max_current = (float)max_volt / 10.0f; // Rsense = 10 ohm
-            float avg_current = (float)avg_volt / 10.0f; 
-            // SEGURIDAD CRÍTICA
-            if (max_current > 80.0f) { // Ejemplo: Límite 50mA
-                // AQUÍ: Función para apagar el Flyback y el H-Bridge inmediatamente
-                ESP_LOGE(TAG, "¡SOBRECORRIENTE DETECTADA! %.2f mA", max_current);
-            }
-            
-            ESP_LOGI(TAG, "I_peak: %.2f mA | I_avg: %.2f mA", max_current, avg_current);
-        }
-    }
 }

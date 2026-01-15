@@ -4,7 +4,8 @@
 #include <sdkconfig.h>
 #include "hbridge_driver.h"
 #include "flyback_control.h"
-#include "esp_log.h"
+#include "current_monitor.h"
+ #include "esp_log.h"
 
 
 static const char *TAG = "TENS_MAIN";
@@ -12,6 +13,8 @@ static const char *TAG = "TENS_MAIN";
 void app_main(void) {
     // 1. Inicialización de periféricos
     ESP_LOGI(TAG, "Inicializando sistema...");
+    // Inicio ADC
+    current_monitor_init();
     // Inicio Flyback
     //flyback_init(); 
     
