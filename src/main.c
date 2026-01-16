@@ -14,12 +14,12 @@ void app_main(void) {
     // 1. Inicialización de periféricos
     ESP_LOGI(TAG, "Inicializando sistema...");
     // Inicio ADC
-    current_monitor_init();
+    //current_monitor_init();
     // Inicio Flyback
-    flyback_init(); 
+    //flyback_init(); 
     
     //Deadtime de 5us (50 ticks a 10MHz)
-    hbridge_init(50);
+    hbridge_init(200);
 
     // 2. Protocolo de seguridad inicial
     // Hay que cambiar el value

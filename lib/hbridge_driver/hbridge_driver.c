@@ -9,21 +9,22 @@
 static const char *TAG = "H-Bridge"; 
 static mcpwm_gen_handle_t generators[2];
 static mcpwm_timer_handle_t timer = NULL;  //Base de tiempo
-
+static tens_mode_t current_mode = TENS_MODE_BURST;
 // Timer 100 Hz
 static void burst_callback(void* arg) {
-    //Inicialización variable
     static bool output_en = true;
-    if (output_en) {
-        // Habilitación salida
-        mcpwm_generator_set_force_level(generators[0], -1, true); //el true indica que solo aquí puedo reanudar
-        mcpwm_generator_set_force_level(generators[1], -1, true);
-    } else {
-        // Silencio
-        mcpwm_generator_set_force_level(generators[0], 0, true);
-        mcpwm_generator_set_force_level(generators[1], 0, true);
-    }
-    output_en = !output_en;
+    
+    // Si estamos en burst, conmutamos
+    if (current_mode == TENS_MODE_BURST) {
+        if (output_en) {
+            mcpwm_generator_set_force_level(generators[0], -1, true);
+            mcpwm_generator_set_force_level(generators[1], -1, true);
+        } else {
+            mcpwm_generator_set_force_level(generators[0], 0, true);
+            mcpwm_generator_set_force_level(generators[1], 0, true);
+        }
+        output_en = !output_en;
+    } 
 }
 void hbridge_init(uint32_t deadtime_ticks)
 {
