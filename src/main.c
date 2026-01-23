@@ -5,7 +5,8 @@
 #include "hbridge_driver.h"
 #include "flyback_control.h"
 #include "current_monitor.h"
- #include "esp_log.h"
+#include "intensity_control.h"
+#include "esp_log.h"
 
 
 static const char *TAG = "TENS_MAIN";
@@ -20,7 +21,16 @@ void app_main(void) {
     
     //Deadtime de 5us (50 ticks a 10MHz)
     hbridge_init(200);
-
+    //Control del flyback
+    // 2. Aquí es donde REALMENTE creas la tarea de control
+    xTaskCreate( 
+        flyback_control_task,   // Función que definiste en current_control.c
+        "ControlTask",          // Nombre para debug
+        4096,                   // Tamaño del stack
+        NULL,                   // pvParameters (el que preguntaste antes)
+        10,                     // Prioridad
+        NULL                   // Handle
+    );
     // 2. Protocolo de seguridad inicial
     // Hay que cambiar el value
     //set_DAC_value(0); 

@@ -1,13 +1,15 @@
-#include "esp_adc/adc_continuous.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
 //RTOS maneja las tareas de las interrupciones
 #include "freertos/FreeRTOS.h" 
 #include "freertos/semphr.h" //gestiona la sincro entre partes del código
 #include "freertos/task.h"
+#include "esp_adc/adc_continuous.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "esp_log.h"
+#include "current_monitor.h"
 #define ADC_ATTEN    ADC_ATTEN_DB_12
 
+volatile float current_ma_global = 0.0f; //volátil para que lo lea siempre
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
 static adc_continuous_handle_t handle = NULL;
@@ -60,6 +62,7 @@ void monitor_task(void *pvParameters) {
                 adc_cali_raw_to_voltage(cali_handle, avg_raw, &avg_volt);
                 float max_current = (float)max_volt / 10.0f; // Rsense = 10 ohm
                 float avg_current = (float)avg_volt / 10.0f; 
+                current_ma_global = avg_current;
                 // SEGURIDAD CRÍTICA
                 if (max_current > 80.0f) { // Ejemplo: Límite 50mA
                     // AQUÍ: Función para apagar el Flyback y el H-Bridge inmediatamente
@@ -70,7 +73,7 @@ void monitor_task(void *pvParameters) {
                 
         }
         }
-        vTaskDelay(1);
+        //vTaskDelay(1);
     }
 }
 void current_monitor_calibrate_init(void) {
@@ -99,7 +102,7 @@ void current_monitor_init(void) {
     // Configuración del Driver Continuo
     adc_continuous_handle_cfg_t adc_config = {
         .max_store_buf_size = 1024, // Tamaño del buffer en RAM, almacena las muestras antes de que se pierdan
-        .conv_frame_size = 256,     // 256/(4 bytes/muestra) = 64 muestras que es envían a la cpu en batc                  h, interrupción
+        .conv_frame_size = 256,     // 256/(4 bytes/muestra) = 64 muestras que es envían a la cpu en batch, interrupción
     };
     ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &handle)); //el handle es la dirección de la ram
 

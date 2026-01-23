@@ -3,13 +3,15 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "hbridge_driver.h"
 #include "driver/mcpwm_prelude.h"
+#include "hbridge_driver.h"
 
 static const char *TAG = "H-Bridge"; 
 static mcpwm_gen_handle_t generators[2];
 static mcpwm_timer_handle_t timer = NULL;  //Base de tiempo
 static tens_mode_t current_mode = TENS_MODE_BURST;
+volatile bool bridge_silence = false; //volátil para que lo lea siempre
+
 // Timer 100 Hz
 static void burst_callback(void* arg) {
     static bool output_en = true;
@@ -17,11 +19,13 @@ static void burst_callback(void* arg) {
     // Si estamos en burst, conmutamos
     if (current_mode == TENS_MODE_BURST) {
         if (output_en) {
-            mcpwm_generator_set_force_level(generators[0], -1, true);
+            mcpwm_generator_set_force_level(generators[0], -1, true);  //-1 quita el forzado
             mcpwm_generator_set_force_level(generators[1], -1, true);
+            bridge_silence=false;
         } else {
             mcpwm_generator_set_force_level(generators[0], 0, true);
             mcpwm_generator_set_force_level(generators[1], 0, true);
+            bridge_silence=true;
         }
         output_en = !output_en;
     } 

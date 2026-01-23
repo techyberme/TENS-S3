@@ -16,9 +16,14 @@ typedef enum {
 
 
 // Inicializa el hardware (Deadtime en ticks de 0.1us)
+/**
+ * @brief Inicialización del Puente en H
+ */
 void hbridge_init(uint32_t deadtime_ticks);
 
-// Apaga el puente inmediatamente
+/**
+ * @brief Apagado del Puente en H
+ */
 void hbridge_stop(void);
 
 #endif

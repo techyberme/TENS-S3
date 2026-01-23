@@ -1,12 +1,10 @@
-#include "flyback_control.h"
 #include "driver/i2c.h"
-
+#include "flyback_control.h"
 // Configuración I2C
 #define I2C_MASTER_SCL_IO    8    // Ajusta según tus pines
 #define I2C_MASTER_SDA_IO    9
 #define I2C_MASTER_NUM       I2C_NUM_0  //EScojo el primer puerto I2C
 #define I2C_MASTER_FREQ_HZ   400000 // 400kHz para rapidez
-
 void flyback_init(void) {
     // 1. Inicializar bus I2C
     i2c_config_t conf = {
@@ -41,7 +39,7 @@ void set_DAC_value(uint16_t value) {
     //Segundo paquete, 8LSB
     data[1] = value & 0xFF;        // 8 bits LSB
 
-    i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR, data, 2, 100 / portTICK_PERIOD_MS); //Time out de 100 ms, por si el bus está bloqueado
+    i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR, data, 2, 10 / portTICK_PERIOD_MS); //Time out de 10 ms, por si el bus está bloqueado
 }
 void flyback_enable(bool enable) {
     gpio_set_level(FLYBACK_EN_GPIO, !enable); // Encendido del Flyback
