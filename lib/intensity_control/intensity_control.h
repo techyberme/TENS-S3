@@ -8,7 +8,9 @@
 #define CURRENT_UP_GPIO  10
 #define CURRENT_DOWN_GPIO 11
 #define DAC_STEP_USER   50  // Cuánto cambia el DAC por cada pulsación
-#define DAC_START_VAL    1376  // 1.244V inicial
+#define DAC_MIN_VAL    1550  // tomo 1.4V como el salto de los bjts.
+#define DAC_TARGET_VAL  2095  // 0.05 mA para empezar
+#define DAC_MAX_VAL    4096  // tomo 1.4V como el salto de los bjts.
 #define TARGET_CURRENT   20    // Corriente mínima objetivo
 #define DAC_STEP         20    // 0,1 mA/salto
 #define SESSION_DURATION         20    //duración del programa en minutos
@@ -19,6 +21,7 @@ typedef enum {
     STATE_BASE,  // Bajada automática del DAC hasta alcanzar 20mA
     STATE_FUNC,  // El usuario tiene el control mediante botones
     STATE_STANDBY,          // Parada por desconexión de electrodos
+    STATE_RECU,
     STATE_DONE,
     STATE_ERROR          // Parada de emergencia por fallo de lectura o hardware
 } system_state_t;

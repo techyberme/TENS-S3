@@ -9,8 +9,8 @@
 #include "hbridge_driver.h"
 static const char *TAG = "CONTROL_LOGIC";
 static system_state_t current_state = STATE_INIT;
-static uint16_t current_dac_val = DAC_START_VAL;
-static uint16_t base_dac = 0;           //corresponds to the DAC value for wich 20 mA are achieved
+static uint16_t current_dac_val = DAC_MIN_VAL;
+static uint16_t saved_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
 static uint16_t low_current_counter = 0;    
 static uint16_t recovery_counter = 0;   
 extern volatile float current_ma_global;
@@ -61,14 +61,13 @@ void flyback_control_task(void *pvParameters) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
         switch (current_state) {
             case STATE_BASE:
-                if (current_ma_global < TARGET_CURRENT) {
+                if (current_dac_val < DAC_TARGET_VAL) {
                     // Verificación de límite inferior de seguridad para el DAC
-                    if (current_dac_val > 0) {
-                        current_dac_val -= DAC_STEP;
-                        base_dac= current_dac_val;
+                    if (current_ma_global<40.0f) {
+                        current_dac_val += DAC_STEP;
                         set_DAC_value(current_dac_val);
                     } else {
-                        ESP_LOGE(TAG, "Límite de seguridad DAC alcanzado sin llegar a 20mA");
+                        ESP_LOGW(TAG, "Alta corriente detectada");
                         current_state = STATE_ERROR;
                     }
                 } else {
@@ -93,10 +92,12 @@ void flyback_control_task(void *pvParameters) {
                 low_current_counter = 0; 
             } 
             // Si NO es silencio y la corriente es baja, empezamos a contar para el error
-            else if (current_ma_global < 5.0f) {
+            else if (current_ma_global < 3.0f) {  //Tengo que pensar en el límite
                 low_current_counter++;
-                if (low_current_counter > 15) { // 300ms de seguridad
-                    ESP_LOGE(TAG, "Electrodos desconectados");
+                if (low_current_counter > 5) { // 100ms de seguridad
+                    set_DAC_value(DAC_MIN_VAL); //apago DAC
+                    ESP_LOGW(TAG, "Electrodos desconectados");
+                    saved_dac_val = current_dac_val;
                     current_state = STATE_STANDBY;
                 }
             } else {
@@ -105,30 +106,70 @@ void flyback_control_task(void *pvParameters) {
                 //no espero a que llegue info
                 if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
                     if (io_num == CURRENT_UP_GPIO) {
-                            if (current_ma_global>40){
-                            ESP_LOGE(TAG, "Límite de corriente alcanzado");
-                        }
-                            else    {update_user_current(-DAC_STEP_USER);}
-                    } else if (io_num == CURRENT_DOWN_GPIO) {
-                        update_user_current(DAC_STEP_USER);
+                            update_user_current(DAC_STEP_USER);}
+                     else if (io_num == CURRENT_DOWN_GPIO) {
+                        update_user_current(-DAC_STEP_USER);
                     }
                 }
                 break;
             case STATE_STANDBY:
-                if (current_ma_global>8.0f){
+            /*
+            Al reducir el ciclo de trabajo del
+            espejo de corriente a un pulso de apenas 5 ms cada medio segundo, 
+            el sistema permanece en un estado de "baja potencia" prácticamente inerte para el usuario, 
+            pero suficiente para que el ADC valide la continuidad del circuito. Esto evita dejar una tensión de 80 V 
+            expuesta de forma continua en los electrodos (lo cual podría causar una micro-estimulación desagradable o 
+            degradación galvánica) y garantiza que la electrónica solo entregue potencia real cuando el modelo de impedancia de 
+            la piel de Vargas Luna detecte una carga cerrada y estable.
+            */
+                static uint32_t last_poll_time = 0;
+                uint32_t current_time = esp_log_timestamp();
+                if (current_time - last_poll_time > 500) { // Probar cada 500ms
+                last_poll_time = current_time;
+
+                // 2. Breve pulso de sondeo a 5 mA (o el mínimo de tu hardware)
+                set_DAC_value(DAC_TARGET_VAL);
+                // Pequeño delay para estabilización de la malla analógica
+                esp_rom_delay_us(500); 
+                // 3. Evaluar si hay contacto
+                if (current_ma_global >= 3.0f) {
                     recovery_counter++;
-                    if (recovery_counter > 15){
-                            ESP_LOGI(TAG, "Contacto recuperado. Reanudando terapia...");
-                            current_state = STATE_FUNC;
-                            recovery_counter = 0;
-                        }
+                } else {
+                    recovery_counter = 0;
+                    set_DAC_value(DAC_MIN_VAL); // Volver a seguridad inmediatamente
+                }
+            }
+            if (recovery_counter >= 3) {
+                ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
+                // IMPORTANTE: No vuelvo de golpe a la corriente anterior.
+                current_dac_val= DAC_MIN_VAL;
+                set_DAC_value(DAC_MIN_VAL);
+                current_state = STATE_RECU; 
+                recovery_counter = 0;
+            }
+                break;
+            case STATE_RECU:
+                if (current_dac_val<saved_dac_val){
+                    current_dac_val += DAC_STEP;
+                    set_DAC_value(current_dac_val);
+                    if (current_ma_global< 3.0f) { 
+                        // Si se pierde el contacto otra vez durante la rampa, abortar
+                        ESP_LOGI(TAG, "Contacto perdido durante recuperación");
+                        set_DAC_value(DAC_MIN_VAL);
+                        current_state = STATE_STANDBY;
                     }
                 else{
-                    recovery_counter=0;
+                    ESP_LOGI(TAG, "Recuperación finalizada");
+                    current_state = STATE_FUNC;
+
                 }
+                    
+                }
+
                 break;
             case STATE_DONE:
                 flyback_stop();
+                ESP_LOGI(TAG, "Programa completado");
                 vTaskSuspend(NULL); // Bloquea la tarea por seguridad
                 break;
             case STATE_ERROR:
@@ -147,11 +188,20 @@ void update_user_current(int16_t delta) {
     if (current_state != STATE_FUNC) return;
 
 
-    int32_t next_val = (int32_t)current_dac_val - delta;
+    int32_t next_val = (int32_t)current_dac_val + delta;
 
-    // Validación de límites antes de aplicar
-    if (next_val >= DAC_START_VAL  && next_val <= 4095) {
-        current_dac_val = (uint16_t)next_val;
-        set_DAC_value(current_dac_val);
+    if (next_val < DAC_MIN_VAL) {
+        current_dac_val = DAC_MIN_VAL;
+        ESP_LOGI(TAG, "corriente mínima");
     }
+    else if (next_val > DAC_MAX_VAL) {
+        current_dac_val = DAC_MAX_VAL;
+        ESP_LOGI(TAG, "corriente máxima");
+    }
+    else {
+        current_dac_val = (uint16_t)next_val;
+    }
+
+    set_DAC_value(current_dac_val);
+
 }
