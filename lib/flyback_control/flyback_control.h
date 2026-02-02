@@ -10,9 +10,7 @@
  * @brief Inicialización del convertidor y del DAC
  */
 void flyback_init(void);
-/**
- * @brief Establece el valor de la DAC
- */
+
 void set_DAC_value(uint16_t value); // 0 a 4095
 /**
  * @brief Enabler del convertidor

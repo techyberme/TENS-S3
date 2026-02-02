@@ -61,7 +61,8 @@ void flyback_control_task(void *pvParameters) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
         switch (current_state) {
             case STATE_BASE:
-                if (current_dac_val < DAC_TARGET_VAL) {
+                //if (current_dac_val < DAC_TARGET_VAL) {
+                if (current_ma_global < 5.0f) { //al no ser el espejo ideal, no hay una clara correlación DAC-Corriente
                     // Verificación de límite inferior de seguridad para el DAC
                     if (current_ma_global<40.0f) {
                         current_dac_val += DAC_STEP;
@@ -78,7 +79,7 @@ void flyback_control_task(void *pvParameters) {
 
             // Dentro de flyback_control_task...
             case STATE_FUNC:
-                uint32_t io_num;
+            uint32_t io_num;
             // Acumulación y Comprobación del tiempo
             time_session += xFrequency;  //solo acumlo en estate_func
             if (time_session>= SESSION_TICKS) {
