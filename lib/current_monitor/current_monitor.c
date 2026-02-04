@@ -7,6 +7,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_log.h"
 #include "current_monitor.h"
+#include "flyback_control.h"
 #define ADC_ATTEN    ADC_ATTEN_DB_12
 
 volatile float current_ma_global = 0.0f; //volátil para que lo lea siempre
@@ -65,12 +66,9 @@ void monitor_task(void *pvParameters) {
                 current_ma_global = avg_current;
                 // SEGURIDAD CRÍTICA
                 if (max_current > 80.0f) { // Ejemplo: Límite 50mA
-                    // AQUÍ: Función para apagar el Flyback y el H-Bridge inmediatamente
-                    ESP_LOGE(TAG, "¡SOBRECORRIENTE DETECTADA! %.2f mA", max_current);
+                    flyback_stop();
                 }
-                
-                ESP_LOGI(TAG, "I_peak: %.2f mA | I_avg: %.2f mA", max_current, avg_current);
-                
+                                
         }
         }
         //vTaskDelay(1);

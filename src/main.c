@@ -8,77 +8,84 @@
 #include "intensity_control.h"
 #include "esp_log.h"
 #include "driver/i2c.h"
-
-
+#include "driver/gpio.h"
+#define CURRENT_UP_GPIO  10
+#define CURRENT_DOWN_GPIO 11
+#define COMP_MS 100 //compensación cada 100 ms.
+extern volatile float current_ma_global;
 static const char *TAG = "TENS_MAIN";
-
-// void app_main(void) {
-//     // 1. Inicialización de periféricos
-//     ESP_LOGI(TAG, "Inicializando sistema...");
-//     // Inicio ADC
-//     //current_monitor_init();
-//     // Inicio Flyback
-//     //flyback_init(); 
-    
-//     //Deadtime de 5us (50 ticks a 10MHz)
-//     hbridge_init(200);
-//     //Control del flyback
-//     // 2. Aquí es donde REALMENTE creas la tarea de control
-//     xTaskCreate( 
-//         flyback_control_task,   // Función que definiste en current_control.c
-//         "ControlTask",          // Nombre para debug
-//         4096,                   // Tamaño del stack
-//         NULL,                   // pvParameters (el que preguntaste antes)
-//         10,                     // Prioridad
-//         NULL                   // Handle
-//     );
-//     // 2. Protocolo de seguridad inicial
-//     // Hay que cambiar el value
-//     //set_DAC_value(0); 
-//     //vTaskDelay(pdMS_TO_TICKS(100)); // Esperar estabilización
-
-//     // 3. Activación del tratamiento (Ejemplo)
-//     // ESP_LOGI(TAG, "Iniciando estimulación...");
-//     // flyback_enable(true); // Encender el LT3757
-
-//     // // Bucle principal: Control de intensidad
-//     // uint16_t intensidad = 0;
-//     while (1) {
-//         // Ejemplo: Rampa ascendente de voltaje para probar el Flyback
-//         // if (intensidad < 2000) { // Subir hasta la mitad del rango del DAC
-//         //     intensidad += 10;
-//         //     flyback_set_raw_value(intensidad);
-//         // }
-
-//         // En un TENS real, aquí leerías botones o un encoder para ajustar la potencia
-//         vTaskDelay(pdMS_TO_TICKS(50)); 
-//     }
-// }
-void app_main(void) {
-    // 1. Inicialización de periféricos
-    vTaskDelay(pdMS_TO_TICKS(10000));
-    flyback_init();
-    ESP_LOGI(TAG, "I2C y GPIO inicializados.");
-
-    uint16_t dac_val = 0;
-
-    while (1) {
-        // Generar una rampa de 0 a 40mA
-        for (dac_val = 0; dac_val <= 4095; dac_val += 100) {
-            
-            set_DAC_value(dac_val);
-
-            ESP_LOGI(TAG, "DAC Val: %d", dac_val);
-            
-            // Pausa de 200ms para poder medir con calma
-            vTaskDelay(pdMS_TO_TICKS(2000));
-        }
-
-        // Pequeño silencio de seguridad al final de la rampa
-        ESP_LOGW(TAG, "Rampa finalizada. Silencio de 2 segundos.");
-        set_DAC_value(0); 
-        vTaskDelay(pdMS_TO_TICKS(2000));
+static QueueHandle_t gpio_evt_queue = NULL;
+static uint32_t last_intr_time = 0;
+static uint16_t dac_val = 0;
+static uint16_t current_dac_val = 0;
+static void IRAM_ATTR gpio_isr_handler(void* arg) {
+    uint32_t current_time = xTaskGetTickCountFromISR();
+    uint32_t gpio_num = (uint32_t) arg;
+    //200 ms desde la última que se ha pulsado el botón, para evitar oscilaciones
+    if ((current_time - last_intr_time) > pdMS_TO_TICKS(200)) {
+        xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+        last_intr_time = current_time;
     }
 }
+void buttons_init(void) {
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << CURRENT_UP_GPIO) | (1ULL << CURRENT_DOWN_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_NEGEDGE // Se activa al presionar (flanco de bajada)
+    };
+    gpio_config(&io_conf);
+    // Crear la cola para 10 eventos
+    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+
+    // Instalar el servicio de ISR y añadir manejadores
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(CURRENT_UP_GPIO, gpio_isr_handler, (void*) CURRENT_UP_GPIO);   //(se inicia, función, argumento ISR)
+    gpio_isr_handler_add(CURRENT_DOWN_GPIO, gpio_isr_handler, (void*) CURRENT_DOWN_GPIO);
+}
+void app_main(void) {
+    // 1. Inicialización de periféricos
+    buttons_init();
+    flyback_init();
+    current_monitor_init();
+    uint32_t last_log_time = 0;
+    
+    ESP_LOGI(TAG, "I2C y GPIO inicializados.");
+
+
+    while (1) {
+        uint32_t io_num;
+        
+        if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
+            if (io_num == CURRENT_UP_GPIO) {
+                if (dac_val <= 3995) { // Evitamos overflow arriba
+                    dac_val += 100;
+                } else {
+                    dac_val = 4095;
+                }
+            }
+            else if (io_num == CURRENT_DOWN_GPIO) {
+                if (dac_val >= 100) { // Comprobación de seguridad antes de restar
+                    dac_val -= 100;
+                } else {
+                    dac_val = 0;
+                }
+            }
+            
+            set_DAC_value(dac_val);
+        }
+        
+        // 3. Logueo controlado (Cada 1000ms)
+        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        if (now - last_log_time > 1000) {
+            // Imprimimos la lectura del ADC que la otra tarea está actualizando
+            ESP_LOGI(TAG, "DAC: %d mA | Real (ADC): %.1f mA", 
+                    dac_val, current_ma_global);
+            last_log_time = now;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+                }
+}
+
 
 

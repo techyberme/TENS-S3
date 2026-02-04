@@ -1,19 +1,24 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include <math.h>
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
 #include "intensity_control.h"
 #include "flyback_control.h"
 #include "hbridge_driver.h"
+#define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
 static system_state_t current_state = STATE_INIT;
 static uint16_t current_dac_val = DAC_MIN_VAL;
 static uint16_t saved_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
 static uint16_t low_current_counter = 0;    
 static uint16_t recovery_counter = 0;   
+static uint32_t last_compen_time = 0;
 extern volatile float current_ma_global;
+float target_ma = 5.0f; //valor inicial
+int level= 0;
 extern volatile bool bridge_silence;
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t time_session= 0;
@@ -55,7 +60,7 @@ void flyback_control_task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount(); //Inicializo, después la tarea se encarga de actualizarla
     const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50 Hz exactos
     
-    ESP_LOGI(TAG, "Iniciando búsqueda de límite: 20mA");
+    ESP_LOGI(TAG, "Iniciando búsqueda de límite: 5mA");
 
     for (;;) {          //equivalente a while(1)
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
@@ -79,39 +84,66 @@ void flyback_control_task(void *pvParameters) {
 
             // Dentro de flyback_control_task...
             case STATE_FUNC:
-            uint32_t io_num;
-            // Acumulación y Comprobación del tiempo
-            time_session += xFrequency;  //solo acumlo en estate_func
-            if (time_session>= SESSION_TICKS) {
-                    ESP_LOGI(TAG, "Sesión terminada. Finalizando...");
-                    current_state = STATE_DONE; 
-                    break;
+                uint32_t io_num;
+                // Acumulación y Comprobación del tiempo
+                time_session += xFrequency;  //solo acumlo en estate_func
+                if (time_session>= SESSION_TICKS) {
+                        ESP_LOGI(TAG, "Sesión terminada. Finalizando...");
+                        current_state = STATE_DONE; 
+                        break;
+                    }
+                //Seguridad, electros desconectados
+                    // Si estamos en un silencio programado, reseteamos el contador de error
+                if (bridge_silence) {
+                    low_current_counter = 0; 
+                } 
+                // Si NO es silencio y la corriente es baja, empezamos a contar para el error
+                else if (current_ma_global < 3.0f) {  //Tengo que pensar en el límite
+                    low_current_counter++;
+                    if (low_current_counter > 5) { // 100ms de seguridad
+                        set_DAC_value(DAC_MIN_VAL); //apago DAC
+                        ESP_LOGW(TAG, "Electrodos desconectados");
+                        saved_dac_val = current_dac_val;
+                        current_state = STATE_STANDBY;
+                    }
+                } else {
+                    low_current_counter = 0;
                 }
-            //Seguridad, electros desconectados
-                // Si estamos en un silencio programado, reseteamos el contador de error
-            if (bridge_silence) {
-                low_current_counter = 0; 
-            } 
-            // Si NO es silencio y la corriente es baja, empezamos a contar para el error
-            else if (current_ma_global < 3.0f) {  //Tengo que pensar en el límite
-                low_current_counter++;
-                if (low_current_counter > 5) { // 100ms de seguridad
-                    set_DAC_value(DAC_MIN_VAL); //apago DAC
-                    ESP_LOGW(TAG, "Electrodos desconectados");
-                    saved_dac_val = current_dac_val;
-                    current_state = STATE_STANDBY;
-                }
-            } else {
-                low_current_counter = 0;
-            }
-                //no espero a que llegue info
-                if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
-                    if (io_num == CURRENT_UP_GPIO) {
-                            update_user_current(DAC_STEP_USER);}
-                     else if (io_num == CURRENT_DOWN_GPIO) {
-                        update_user_current(-DAC_STEP_USER);
+                uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                if (now - last_compen_time >= COMP_MS && !bridge_silence) {
+                    last_compen_time = now;
+                    float error = target_ma - current_ma_global;
+                    //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
+                    if (fabs(error) > 2.0f) { 
+                        if (error > 0) {
+                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= DAC_STEP*10;
+                        } else {
+                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= DAC_STEP*10;
+                        }
+                        set_DAC_value(current_dac_val);
+                    }
+                    else if (fabs(error) > 0.5f) { 
+                        if (error > 0) {
+                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= DAC_STEP;
+                        } else {
+                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= DAC_STEP;
+                        }
+                        set_DAC_value(current_dac_val);
                     }
                 }
+                    //no espero a que llegue info
+                    if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
+                        if (io_num == CURRENT_UP_GPIO) {
+                                target_ma += 5.0f; // El usuario sube 5 mA, son 8 niveles
+                                if (target_ma > 40.0f) target_ma = 40.0f;     
+                        }
+                        else if (io_num == CURRENT_DOWN_GPIO) {
+                            target_ma -= 5.0f;
+                            if (target_ma < 0.0f) target_ma = 0.0f;
+                        }
+                    ESP_LOGI(TAG, "Nuevo Objetivo: %.1f mA (DAC actual: %d)", target_ma, current_dac_val);
+                    level = (int)(target_ma / 5.0f);   //nivel escogido por el usuario, de 0 a 8.
+                    }
                 break;
             case STATE_STANDBY:
             /*
@@ -180,29 +212,8 @@ void flyback_control_task(void *pvParameters) {
 
             default:
                 break;
-        }
+        
     
+        }
     }
-}
-
-void update_user_current(int16_t delta) {
-    if (current_state != STATE_FUNC) return;
-
-
-    int32_t next_val = (int32_t)current_dac_val + delta;
-
-    if (next_val < DAC_MIN_VAL) {
-        current_dac_val = DAC_MIN_VAL;
-        ESP_LOGI(TAG, "corriente mínima");
-    }
-    else if (next_val > DAC_MAX_VAL) {
-        current_dac_val = DAC_MAX_VAL;
-        ESP_LOGI(TAG, "corriente máxima");
-    }
-    else {
-        current_dac_val = (uint16_t)next_val;
-    }
-
-    set_DAC_value(current_dac_val);
-
 }
