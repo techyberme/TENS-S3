@@ -2,6 +2,7 @@
 #include "freertos/task.h"
 #include <unistd.h>
 #include <sdkconfig.h>
+#include <math.h>
 #include "hbridge_driver.h"
 #include "flyback_control.h"
 #include "current_monitor.h"
@@ -12,12 +13,13 @@
 #define CURRENT_UP_GPIO  10
 #define CURRENT_DOWN_GPIO 11
 #define COMP_MS 100 //compensación cada 100 ms.
+static uint32_t last_compen_time = 0;
 extern volatile float current_ma_global;
 static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time = 0;
 static uint16_t dac_val = 0;
-static uint16_t current_dac_val = 0;
+static float current_wanted = 50.0f;
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     uint32_t current_time = xTaskGetTickCountFromISR();
     uint32_t gpio_num = (uint32_t) arg;
@@ -58,29 +60,65 @@ void app_main(void) {
         
         if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
             if (io_num == CURRENT_UP_GPIO) {
-                if (dac_val <= 3995) { // Evitamos overflow arriba
-                    dac_val += 100;
-                } else {
-                    dac_val = 4095;
+                    current_wanted += 10.0f;
+
                 }
-            }
             else if (io_num == CURRENT_DOWN_GPIO) {
-                if (dac_val >= 100) { // Comprobación de seguridad antes de restar
-                    dac_val -= 100;
-                } else {
-                    dac_val = 0;
+                current_wanted -= 10.0f;
+                if (current_wanted < 0.0f) {
+                    current_wanted = 0.0f;
                 }
             }
-            
-            set_DAC_value(dac_val);
         }
+        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        if (now - last_compen_time >= COMP_MS ) {
+                    last_compen_time = now;
+                    float error = current_wanted - current_ma_global;
+                    //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
+                    if (fabs(error) > 2.0f) { 
+                        if (error > 0) {
+                            if (dac_val < 4085) {
+                                dac_val+= 50;
+                            }
+                            else{
+                                dac_val=4095;
+                            }
+                        } else {
+                            if (dac_val > 100) 
+                            {dac_val-= 50;
+                            }
+                            else{
+                                dac_val=0;
+                            }
+                        }
+                        set_DAC_value(dac_val);
+                    }
+                    else if (fabs(error) > 0.5f) { 
+                        if (error > 0) {
+                            if (dac_val < 4085) {
+                                dac_val+= 10;
+                            }
+                            else{
+                                dac_val=4095;
+                            }
+                        } else {
+                            if (dac_val > 100) 
+                            {dac_val-= 10;
+                            }
+                            else{
+                                dac_val=0;
+                            }
+                        }
+                        set_DAC_value(dac_val);
+                    }
+                }
         
         // 3. Logueo controlado (Cada 1000ms)
-        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        
         if (now - last_log_time > 1000) {
             // Imprimimos la lectura del ADC que la otra tarea está actualizando
-            ESP_LOGI(TAG, "DAC: %d mA | Real (ADC): %.1f mA", 
-                    dac_val, current_ma_global);
+            ESP_LOGI(TAG, "DAC: %d | Real (ADC): %.1f mA, Objetivo: %.1f mA", 
+                    dac_val, current_ma_global, current_wanted);
             last_log_time = now;
         }
         vTaskDelay(pdMS_TO_TICKS(20));
