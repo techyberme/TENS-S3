@@ -13,11 +13,14 @@ static const char *TAG = "CONTROL_LOGIC";
 static system_state_t current_state = STATE_INIT;
 static uint16_t current_dac_val = DAC_MIN_VAL;
 static uint16_t saved_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
+static uint16_t base_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
 static uint16_t low_current_counter = 0;    
 static uint16_t recovery_counter = 0;   
 static uint32_t last_compen_time = 0;
 extern volatile float current_ma_global;
-float target_ma = 5.0f; //valor inicial
+//float target_ma = 5.0f; //valor inicial
+float target_ma = 50.0f; //valor inicial
+float max_ma = 50.0f; //valor inicial
 int level= 0;
 extern volatile bool bridge_silence;
 static QueueHandle_t gpio_evt_queue = NULL;
@@ -66,12 +69,13 @@ void flyback_control_task(void *pvParameters) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
         switch (current_state) {
             case STATE_BASE:
-                //if (current_dac_val < DAC_TARGET_VAL) {
-                if (current_ma_global < 5.0f) { //al no ser el espejo ideal, no hay una clara correlación DAC-Corriente
+                
+                if (current_ma_global < 50.0f) { //al no ser el espejo ideal, no hay una clara correlación DAC-Corriente
                     // Verificación de límite inferior de seguridad para el DAC
-                    if (current_ma_global<40.0f) {
+                    if (current_ma_global<max_ma) {
                         current_dac_val += DAC_STEP;
                         set_DAC_value(current_dac_val);
+                        base_dac_val = current_dac_val; //guardo el último valor del DAC que me dio una lectura válida, por si tengo que volver a él.
                     } else {
                         ESP_LOGW(TAG, "Alta corriente detectada");
                         current_state = STATE_ERROR;
@@ -116,17 +120,17 @@ void flyback_control_task(void *pvParameters) {
                     //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
                     if (fabs(error) > 2.0f) { 
                         if (error > 0) {
-                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= DAC_STEP*10;
+                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 50;
                         } else {
-                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= DAC_STEP*10;
+                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 50;
                         }
                         set_DAC_value(current_dac_val);
                     }
                     else if (fabs(error) > 0.5f) { 
                         if (error > 0) {
-                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= DAC_STEP;
+                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 10;
                         } else {
-                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= DAC_STEP;
+                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 10;
                         }
                         set_DAC_value(current_dac_val);
                     }
@@ -134,11 +138,12 @@ void flyback_control_task(void *pvParameters) {
                     //no espero a que llegue info
                     if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
                         if (io_num == CURRENT_UP_GPIO) {
-                                target_ma += 5.0f; // El usuario sube 5 mA, son 8 niveles
-                                if (target_ma > 40.0f) target_ma = 40.0f;     
+                                target_ma += 10.0f; // El usuario sube 5 mA, son 8 niveles
+                                //if (target_ma > 40.0f) target_ma = 40.0f; 
+                                if (target_ma > 100.0f) target_ma = 100.0f;     
                         }
                         else if (io_num == CURRENT_DOWN_GPIO) {
-                            target_ma -= 5.0f;
+                            target_ma -= 10.0f;
                             if (target_ma < 0.0f) target_ma = 0.0f;
                         }
                     ESP_LOGI(TAG, "Nuevo Objetivo: %.1f mA (DAC actual: %d)", target_ma, current_dac_val);
@@ -161,9 +166,9 @@ void flyback_control_task(void *pvParameters) {
                 last_poll_time = current_time;
 
                 // 2. Breve pulso de sondeo a 5 mA (o el mínimo de tu hardware)
-                set_DAC_value(DAC_TARGET_VAL);
+                set_DAC_value(base_dac_val);
                 // Pequeño delay para estabilización de la malla analógica
-                esp_rom_delay_us(500); 
+                vTaskDelay(pdMS_TO_TICKS(10)); // 10 ms, para que de tiempo a medir la corriente.
                 // 3. Evaluar si hay contacto
                 if (current_ma_global >= 3.0f) {
                     recovery_counter++;
@@ -175,8 +180,8 @@ void flyback_control_task(void *pvParameters) {
             if (recovery_counter >= 3) {
                 ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
                 // IMPORTANTE: No vuelvo de golpe a la corriente anterior.
-                current_dac_val= DAC_MIN_VAL;
-                set_DAC_value(DAC_MIN_VAL);
+                current_dac_val= base_dac_val;  //vuelvo al valor mínimo
+                set_DAC_value(base_dac_val);
                 current_state = STATE_RECU; 
                 recovery_counter = 0;
             }
@@ -185,19 +190,21 @@ void flyback_control_task(void *pvParameters) {
                 if (current_dac_val<saved_dac_val){
                     current_dac_val += DAC_STEP;
                     set_DAC_value(current_dac_val);
+                    vTaskDelay(pdMS_TO_TICKS(10)); // 10 ms, para que de tiempo a medir la corriente.
                     if (current_ma_global< 3.0f) { 
                         // Si se pierde el contacto otra vez durante la rampa, abortar
                         ESP_LOGI(TAG, "Contacto perdido durante recuperación");
                         set_DAC_value(DAC_MIN_VAL);
                         current_state = STATE_STANDBY;
                     }
+                }
                 else{
-                    ESP_LOGI(TAG, "Recuperación finalizada");
+                    ESP_LOGI(TAG, "Recuperación finalizada, el valor de la DAC es %d", current_dac_val);
                     current_state = STATE_FUNC;
 
                 }
                     
-                }
+                
 
                 break;
             case STATE_DONE:

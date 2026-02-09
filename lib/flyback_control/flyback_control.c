@@ -1,11 +1,12 @@
 #include "driver/i2c.h"
+#include "freertos/FreeRTOS.h"
+#include "esp_attr.h"
 #include "flyback_control.h"
 #include "esp_log.h"
-// Configuración I2C
-#define I2C_MASTER_SCL_IO    8    // Ajusta según tus pines
-#define I2C_MASTER_SDA_IO    9
-#define I2C_MASTER_NUM       I2C_NUM_0  //EScojo el primer puerto I2C
-#define I2C_MASTER_FREQ_HZ   100000 // 400kHz para rapidez
+#include "esp_timer.h"
+#include "driver/mcpwm_prelude.h"
+static const char *RCTAG = "RC Filter"; 
+static mcpwm_cmpr_handle_t eff_comparator = NULL;
 void flyback_init(void) {
     esp_err_t err;
     // 1. Inicializar bus I2C
@@ -61,3 +62,69 @@ void flyback_enable(bool enable) {
 void flyback_stop() {
     gpio_set_level(FLYBACK_EN_GPIO, 1); // Encendido del Flyback
 } 
+
+void rcfilter_init(void){
+    // TIMER Definition
+    ESP_LOGI(RCTAG, "Timer for RC filter");
+    mcpwm_timer_handle_t timer = NULL;
+    mcpwm_timer_config_t eff_timer_config = {
+        .group_id = 1,
+        .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT, // PLL Clock 160 MHz
+        .resolution_hz = 10000000, //10 MHz Prescaler, 0.1us/ticks
+        .count_mode = MCPWM_TIMER_COUNT_MODE_UP, //just upwards
+        .period_ticks = 100, // 100 ticks for 1 cycle, 10 MHz/ 100= 100 KHz Timer
+    };
+    ESP_ERROR_CHECK(mcpwm_new_timer(&eff_timer_config, &timer));
+
+    // ----- OPERATOR, Definition of channel ----- 
+    ESP_LOGI(RCTAG, "Create operators");
+    mcpwm_oper_handle_t operators = NULL;
+    mcpwm_operator_config_t eff_operator_config = {
+        .group_id = 0,
+    };
+    ESP_ERROR_CHECK(mcpwm_new_operator(&eff_operator_config, &operators));
+    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(operators, timer));
+
+
+    // -----Comparator-----//
+    ESP_LOGI(RCTAG, "Create comparators");
+    mcpwm_comparator_config_t eff_compare_config = {
+        .flags.update_cmp_on_tez = true,
+    };
+    ESP_ERROR_CHECK(mcpwm_new_comparator(operators, &eff_compare_config, &eff_comparator));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(eff_comparator, 50));  //50% Duty ratio
+
+    // -----Generator-----//
+    ESP_LOGI(RCTAG, "Create generators");
+    mcpwm_gen_handle_t eff_generator = NULL;
+    mcpwm_generator_config_t gen_config = {};
+    const int gen_gpios = RC_FILTER_GPIO; 
+    gen_config.gen_gpio_num = gen_gpios;
+    ESP_ERROR_CHECK(mcpwm_new_generator(operators, &gen_config, &eff_generator));
+    // ====== Generator Action  ====== //
+    ESP_LOGI(RCTAG, "Set generator action on timer and compare event");
+    // PWM Start with HIGH State when Timer is 0 and LOW State when Comparators value is equal Timer, For MCPWM_TIMER_COUNT_MODE_UP
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(eff_generator,MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+    ESP_ERROR_CHECK(mcpwm_generator_set_actions_on_compare_event(eff_generator,MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, eff_comparator, MCPWM_GEN_ACTION_LOW)));
+    ESP_LOGI(RCTAG, "Enable and start timer");
+    ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
+    ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
+
+}
+
+
+void set_pwm_duty_cycle(uint32_t duty_cycle){
+    if (duty_cycle > 38){   //límite a 1,24
+        duty_cycle= 38;
+    }
+    esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
+    if (ret != ESP_OK) {
+        ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);
+    }
+  }  
+
+
+  voltage_control(void){
+    //Aquí se implementaría el control de voltaje, leyendo el valor del ADC y ajustando el duty cycle en consecuencia.
+    //Por ejemplo, podríamos usar un PID para mantener el voltaje deseado.
+  }

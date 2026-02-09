@@ -8,7 +8,7 @@
 #define CURRENT_UP_GPIO  10
 #define CURRENT_DOWN_GPIO 11
 #define DAC_STEP_USER   50  // Cuánto cambia el DAC por cada pulsación
-#define DAC_MIN_VAL    1550  // tomo 1.4V como el salto de los bjts.
+#define DAC_MIN_VAL    0 // 1550,tomo 1.4V como el salto de los bjts.
 #define DAC_TARGET_VAL  2095  // 0.05 mA para empezar
 #define DAC_MAX_VAL    4096  // tomo 1.4V como el salto de los bjts.
 #define TARGET_CURRENT   20    // Corriente mínima objetivo
@@ -39,12 +39,6 @@ void flyback_control_task(void *pvParameters);
  * Útil para que otras tareas (UI/Buttons) sepan si pueden actuar.
  */
 system_state_t get_system_state(void);
-
-/**
- * @brief Permite actualizar la consigna del DAC externamente.
- * Solo debería ser efectiva si el estado es STATE_USER_CONTROL.
- */
-void update_user_current(int16_t delta);
 
 
 /**

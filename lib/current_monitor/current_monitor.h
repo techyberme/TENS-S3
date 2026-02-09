@@ -13,4 +13,9 @@ void current_monitor_init(void);
  */
 void current_monitor_calibrate_init(void);
 
+/**
+ * @brief Lectura del voltaje en el Espejo de corriente.
+ */
+void voltage_reading(void);
+
 #endif

@@ -117,4 +117,4 @@ void hbridge_init(uint32_t deadtime_ticks)
 void hbridge_stop(void){
     mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY);
 }
-     
+
