@@ -5,8 +5,42 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "driver/mcpwm_prelude.h"
+#include "driver/gpio.h"
+#include "current_monitor.h"
+#include "hbridge_driver.h"
+#include "led_strip.h"
+
 static const char *RCTAG = "RC Filter"; 
 static mcpwm_cmpr_handle_t eff_comparator = NULL;
+static led_strip_handle_t led_strip;
+led_strip_handle_t configure_led(void)
+{
+    // 1. Configuración general del LED
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = LED_STRIP_GPIO_PIN,
+        .max_leds = LED_STRIP_LED_COUNT,
+        .led_model = LED_MODEL_WS2812, // Modelo estándar en S3
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+        .flags = {
+            .invert_out = false,
+        }
+    };
+
+    // 2. Configuración del backend RMT
+    led_strip_rmt_config_t rmt_config = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = LED_STRIP_RMT_RES_HZ,
+        .mem_block_symbols = 0, // Auto
+        .flags = {
+            .with_dma = false, // No necesario para 1 solo LED
+        }
+    };
+
+    led_strip_handle_t led_handle;
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_handle));
+    
+    return led_handle;
+}
 void flyback_init(void) {
     esp_err_t err;
     // 1. Inicializar bus I2C
@@ -36,6 +70,15 @@ if (err != ESP_OK) {
     };
     gpio_config(&io_conf);
     gpio_set_level(FLYBACK_EN_GPIO, 1); // Empezamos apagados
+
+    led_strip = configure_led();
+    if (led_strip){
+        ESP_LOGI("INIT", "LED configurado correctamente");
+        led_strip_clear(led_strip); // Aseguramos que el LED empieza apagado
+    }
+    else{
+        ESP_LOGE("INIT", "Error al configurar el LED");
+    }
 }
 
 void set_DAC_value(uint16_t value) {
@@ -59,8 +102,33 @@ void set_DAC_value(uint16_t value) {
 void flyback_enable(bool enable) {
     gpio_set_level(FLYBACK_EN_GPIO, !enable); // Encendido del Flyback
 }
-void flyback_stop() {
-    gpio_set_level(FLYBACK_EN_GPIO, 1); // Encendido del Flyback
+void flyback_stop(system_error_t error) {
+    gpio_set_level(FLYBACK_EN_GPIO, 1); // Apagado del Flyback
+    set_DAC_value(0); //cierro el espejo de corriente
+    hbridge_stop(); // Parada de emergencia del puente H, lo hago después del flyback para evitar picos de corriente al cortar el puente H antes que el flyback
+    switch (error) {
+        case ERR_IMPEDANCE_HIGH:
+            led_strip_set_pixel(led_strip, 0, 212, 99, 28); // Naranja 
+            ESP_LOGE("SAFETY", "STOP: Impedancia elevada");
+            break;
+        case ERR_OVERVOLTAGE:
+            led_strip_set_pixel(led_strip, 0, 255, 0, 255); // Magenta (Peligro Voltaje)
+            ESP_LOGE("SAFETY", "STOP: Voltaje de colector al límite");
+            break;
+        case ERR_OPEN_CIRCUIT:
+            led_strip_set_pixel(led_strip, 0, 212, 212, 28); // Amarill(Circuito abierto)
+            ESP_LOGW("SAFETY", "STOP: Electrodos Desconectados");
+            break;
+        case WARN_DONE:
+            led_strip_set_pixel(led_strip, 0, 124, 252, 0); // Amarill(Circuito abierto)
+            ESP_LOGW("SAFETY", "STOP: Electrodos Desconectados");
+            break;
+        default:
+            led_strip_clear(led_strip);
+            break;
+    }
+    led_strip_refresh(led_strip);
+
 } 
 
 void rcfilter_init(void){
@@ -80,7 +148,7 @@ void rcfilter_init(void){
     ESP_LOGI(RCTAG, "Create operators");
     mcpwm_oper_handle_t operators = NULL;
     mcpwm_operator_config_t eff_operator_config = {
-        .group_id = 0,
+        .group_id = 1,
     };
     ESP_ERROR_CHECK(mcpwm_new_operator(&eff_operator_config, &operators));
     ESP_ERROR_CHECK(mcpwm_operator_connect_timer(operators, timer));
@@ -114,9 +182,9 @@ void rcfilter_init(void){
 
 
 void set_pwm_duty_cycle(uint32_t duty_cycle){
-    if (duty_cycle > 38){   //límite a 1,24
-        duty_cycle= 38;
-    }
+    // if (duty_cycle > 38){   //límite a 1,24
+    //     duty_cycle= 38;
+    // }
     esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
     if (ret != ESP_OK) {
         ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);
@@ -124,7 +192,21 @@ void set_pwm_duty_cycle(uint32_t duty_cycle){
   }  
 
 
-  voltage_control(void){
-    //Aquí se implementaría el control de voltaje, leyendo el valor del ADC y ajustando el duty cycle en consecuencia.
-    //Por ejemplo, podríamos usar un PID para mantener el voltaje deseado.
+void voltage_control(void){
+    static uint32_t current_duty= 38;
+    while(1){
+        float v_collector = get_voltage();
+        //si sobra mucho voltaje
+        if (v_collector > (V_MARGIN_TARGET +V_MARGIN_BAND)){
+            current_duty +=1; 
+        }
+        else if (v_collector > (V_MARGIN_TARGET +V_MARGIN_BAND)){
+            if (current_duty>1) current_duty -=1; 
+        }
+        set_pwm_duty_cycle(current_duty);
+        vTaskDelay(pdMS_TO_TICKS(100)); // Frecuencia de control: 10 Hz
+    }
+
   }
+
+

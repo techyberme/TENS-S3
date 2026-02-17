@@ -9,13 +9,12 @@
 static const char *TAG = "H-Bridge"; 
 static mcpwm_gen_handle_t generators[2];
 static mcpwm_timer_handle_t timer = NULL;  //Base de tiempo
-static tens_mode_t current_mode = TENS_MODE_BURST;
+static tens_mode_t current_mode = TENS_MODE_CONTINUO;
 volatile bool bridge_silence = false; //volátil para que lo lea siempre
 
 // Timer 100 Hz
 static void burst_callback(void* arg) {
     static bool output_en = true;
-    
     // Si estamos en burst, conmutamos
     if (current_mode == TENS_MODE_BURST) {
         if (output_en) {
@@ -34,7 +33,6 @@ void hbridge_init(uint32_t deadtime_ticks)
 {
    // TIMER Definition
     ESP_LOGI(TAG, "Create timer and operator");
-    mcpwm_timer_handle_t timer = NULL;
     mcpwm_timer_config_t timer_config = {
         .group_id = 0,
         .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT, // PLL Clock 160 MHz
@@ -115,6 +113,10 @@ void hbridge_init(uint32_t deadtime_ticks)
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
 }
 void hbridge_stop(void){
+    mcpwm_generator_set_force_level(generators[0], 0, true);
+    mcpwm_generator_set_force_level(generators[1], 0, true);
     mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY);
 }
+
+
 

@@ -5,18 +5,21 @@
 #include <stdbool.h>
 #include "freertos/queue.h"
 
-#define CURRENT_UP_GPIO  10
-#define CURRENT_DOWN_GPIO 11
+#define UP_GPIO  10
+#define DOWN_GPIO 11
+#define OK_GPIO 12
 #define DAC_STEP_USER   50  // Cuánto cambia el DAC por cada pulsación
 #define DAC_MIN_VAL    0 // 1550,tomo 1.4V como el salto de los bjts.
 #define DAC_TARGET_VAL  2095  // 0.05 mA para empezar
 #define DAC_MAX_VAL    4096  // tomo 1.4V como el salto de los bjts.
 #define TARGET_CURRENT   20    // Corriente mínima objetivo
 #define DAC_STEP         20    // 0,1 mA/salto
-#define SESSION_DURATION         20    //duración del programa en minutos
+#define SESSION_DURATION         5    //duración del programa en minutos
 #define SESSION_TICKS         (pdMS_TO_TICKS(SESSION_DURATION *60*1000))    //duración del programa en ticks
 /* --- Definiciones de Estados del Sistema --- */
 typedef enum {
+    STATE_TIME,
+    STATE_PROGRAM,
     STATE_INIT,          // Inicialización de hardware
     STATE_BASE,  // Bajada automática del DAC hasta alcanzar 20mA
     STATE_FUNC,  // El usuario tiene el control mediante botones
