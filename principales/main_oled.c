@@ -1,3 +1,4 @@
+#include "oled.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <unistd.h>
@@ -6,8 +7,6 @@
 #include "flyback_control.h"
 #include "current_monitor.h"
 #include "intensity_control.h"
-#include "oled.h"
-#include "buzzer.h"
 #include "esp_log.h"
 #include "driver/i2c.h"
 
@@ -17,22 +16,24 @@ static const char *TAG = "TENS_MAIN";
 
 void app_main(void) {
     // 1. Inicialización de periféricos
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    buzzer_init();
-    buttons_init();
-    display_init();       // Configura el driver I2C y U8g2
-    display_show_logo(); 
+    // 1. Inicializar hardware de pantalla
+    display_init();
+
+    // 2. Mostrar logo 3 segundos
+    display_show_logo();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    // 3. Lanzar la interfaz y continuar con el resto del sistema
     display_start_ui_task();
-    hbridge_init(50);
     flyback_init();
+    buttons_init();
     current_monitor_init();
     // Esperamos a que el filtro RC de FB se cargue (p. ej. desde un DAC o PWM)
     // Si el filtro es de 5ms, espera 10ms por seguridad (2 constantes de tiempo).
     vTaskDelay(pdMS_TO_TICKS(10)); 
 
     // Ahora es seguro encender
-    // ESP_LOGI("INIT", "Filtro FB estabilizado. Encendiendo Flyback.");
-    // gpio_set_level(FLYBACK_EN_GPIO, 0); // Suelta el pin VC
+    ESP_LOGI("INIT", "Filtro FB estabilizado. Encendiendo Flyback.");
+    gpio_set_level(FLYBACK_EN_GPIO, 0); // Suelta el pin VC
     uint32_t last_log_time = 0;
     //2. Aquí es donde REALMENTE creas la tarea de control
     xTaskCreate( 
@@ -56,5 +57,7 @@ void app_main(void) {
          vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
+
+
 
 

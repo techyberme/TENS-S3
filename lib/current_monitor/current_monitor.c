@@ -5,15 +5,20 @@
 #include "esp_adc/adc_continuous.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "current_monitor.h"
-#define ADC_ATTEN    ADC_ATTEN_DB_12
+#include "flyback_control.h"
+
 
 volatile float current_ma_global = 0.0f; //volátil para que lo lea siempre
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
 static adc_continuous_handle_t handle = NULL;
 static TaskHandle_t s_monitor_task_handle = NULL; // Handle de la tarea que procesará los datos
+// Nuevos handles para la lectura de voltaje
+static adc_oneshot_unit_handle_t volt_adc_handle;
+static adc_cali_handle_t volt_cali_handle = NULL;
 
 // Se dispara el callback cuando se llena el frame
 static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, 
@@ -65,12 +70,9 @@ void monitor_task(void *pvParameters) {
                 current_ma_global = avg_current;
                 // SEGURIDAD CRÍTICA
                 if (max_current > 80.0f) { // Ejemplo: Límite 50mA
-                    // AQUÍ: Función para apagar el Flyback y el H-Bridge inmediatamente
-                    ESP_LOGE(TAG, "¡SOBRECORRIENTE DETECTADA! %.2f mA", max_current);
+                    flyback_stop(ERR_OVERCURRENT);
                 }
-                
-                ESP_LOGI(TAG, "I_peak: %.2f mA | I_avg: %.2f mA", max_current, avg_current);
-                
+                                
         }
         }
         //vTaskDelay(1);
@@ -132,4 +134,62 @@ void current_monitor_init(void) {
     xTaskCreate(monitor_task, "Monitor", 4096, NULL, 10, &s_monitor_task_handle);
     // Arrancar la captación automática
     ESP_ERROR_CHECK(adc_continuous_start(handle));
+}
+
+void voltage_monitor_init() {
+    // 1. Configuración de la unidad ADC1
+    adc_oneshot_unit_init_cfg_t init_config1 = {
+        .unit_id = ADC_UNIT_2,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &volt_adc_handle));
+
+    // 2. Configuración del canal para el BCM56DS (Colector)
+    adc_oneshot_chan_cfg_t config = {
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .atten = ADC_ATTEN_DB_12, // Rango hasta ~3.1V para cubrir tus 80V escalados
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL, &config)); //GPIO 4 en S3
+
+    // 3. Calibración 
+    voltage_monitor_calibrate_init();
+    
+}
+
+void voltage_monitor_calibrate_init(void) {
+    ESP_LOGI(TAG, "Configurando esquema de calibración...");
+    adc_cali_curve_fitting_config_t cali_config = {
+        .unit_id = ADC_UNIT_2,
+        .atten = ADC_ATTEN_DB_12,           
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+
+    // Esto lee los eFuses internos del S3 y crea la curva matemática
+    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &volt_cali_handle);
+    
+    if (ret != ESP_OK) {
+        ESP_LOGI(TAG, "Error al crear esquema de calibración. ¿eFuses no grabados?");
+    }
+}
+
+float get_voltage() {
+    int raw_val;
+    int voltage_mv;
+    float sum = 0;
+    const int num_samples = 16;
+    for (int i = 0; i < num_samples; i++) {
+        ESP_ERROR_CHECK(adc_oneshot_read(volt_adc_handle, ADC_VOL, &raw_val));
+        if (volt_cali_handle) {
+            adc_cali_raw_to_voltage(volt_cali_handle, raw_val, &voltage_mv);
+            sum += voltage_mv;
+        }
+    }
+    
+    float avg_mv = sum / num_samples;
+    
+    // Factor de conversión del divisor (1M ohm / 39k ohm)
+    // V_real = V_adc * (R_high + R_low) / R_low
+    float factor = (1000.0f + 39.0f) / 39.0f;
+    
+    return (avg_mv / 1000.0f) * factor; 
 }

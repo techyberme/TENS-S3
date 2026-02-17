@@ -1,46 +1,48 @@
+# TENS-S3 Project Libraries
 
-This directory is intended for project specific (private) libraries.
-PlatformIO will compile them to static libraries and link into the executable file.
+This directory is intended for project-specific (private) libraries and Hardware Abstraction Layers (HAL). PlatformIO will compile them to static libraries and link them into the executable file.
 
-The source code of each library should be placed in a separate directory
-("lib/your_library_name/[Code]").
+## Component Overview
 
-For example, see the structure of the following example libraries `Foo` and `Bar`:
+The TENS-S3 firmware is modularized into the following components:
 
+| Library | Description | Key Responsibilities |
+| :--- | :--- | :--- |
+| **`oled`** | Display Manager | Handles the SSD1306/SH1106 OLED display using `u8g2`. Manages UI states (Time Config, Program Select, Running, Error). |
+| **`hbridge_driver`** | Output Power Stage | controls the H-Bridge and Flyback converter using ESP32 **MCPWM**. Handles dead-time insertion, frequency generation, and emergency stops. |
+| **`intensity_control`** | Logic & Safety | Implements the main State Machine. Handles button inputs (Debounce), manages session timers, and calculates target intensity levels. |
+| **`current_monitor`** | Feedback Loop | Reads the current sensor via ADC. Provides real-time feedback for the PID loop and detects "Lead Off" (electrode disconnection) events. |
+| **`buzzer`** | User Feedback | Controls the passive piezoelectric buzzer using **LEDC**. Provides acoustic feedback for button presses, alarms, and session completion. |
+
+## Directory Structure
+
+The source code of each library is placed in a separate directory to maintain clean separation of concerns:
+
+```text
 |--lib
 |  |
-|  |--Bar
-|  |  |--docs
-|  |  |--examples
-|  |  |--src
-|  |     |- Bar.c
-|  |     |- Bar.h
-|  |  |- library.json (optional. for custom build options, etc) https://docs.platformio.org/page/librarymanager/config.html
+|  |--oled
+|  |  |- oled.c          // UI rendering tasks and u8g2 callbacks
+|  |  |- oled.h          // UI State definitions
 |  |
-|  |--Foo
-|  |  |- Foo.c
-|  |  |- Foo.h
+|  |--hbridge_driver
+|  |  |- hbridge_driver.c // MCPWM configuration and Flyback logic
+|  |  |- hbridge_driver.h
 |  |
-|  |- README --> THIS FILE
+|  |--intensity_control
+|  |  |- intensity_control.c // Button ISRs and State Machine logic
+|  |  |- intensity_control.h
+|  |
+|  |--current_monitor
+|  |  |- current_monitor.c // ADC reading and averaging
+|  |  |- current_monitor.h
+|  |
+|  |--buzzer
+|  |  |- buzzer.c        // Non-blocking tones and alarms
+|  |  |- buzzer.h
+|  |
+|  |- README.md --> THIS FILE
 |
 |- platformio.ini
 |--src
    |- main.c
-
-Example contents of `src/main.c` using Foo and Bar:
-```
-#include <Foo.h>
-#include <Bar.h>
-
-int main (void)
-{
-  ...
-}
-
-```
-
-The PlatformIO Library Dependency Finder will find automatically dependent
-libraries by scanning project source files.
-
-More information about PlatformIO Library Dependency Finder
-- https://docs.platformio.org/page/librarymanager/ldf.html
