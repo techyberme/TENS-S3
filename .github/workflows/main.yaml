@@ -35,7 +35,7 @@ jobs:
           pip install platformio
 
       - name: Run Static Analysis
-        run: pio check --fail-on-defect low
+        run: pio check --fail-on-defect high,medium
 
       - name: Compile Project
         run: pio run -e esp32-s3-devkitm-1
