@@ -20,11 +20,12 @@ static uint16_t low_current_counter = 0;
 static uint16_t recovery_counter = 0;   
 static uint32_t last_compen_time = 0;
 static bool UIcalled = false;   //used to call the UI just one
+static bool was_silenced = false; //dac silences
 uint32_t io_num;
 extern volatile float current_ma_global;
 float target_ma = 50.0f; //valor inicial
 float max_ma = 50.0f; //valor inicial
-int level= 0;
+int level= 1;
 int program =1;
 extern volatile bool bridge_silence;
 static QueueHandle_t gpio_evt_queue = NULL;
@@ -125,18 +126,19 @@ void flyback_control_task(void *pvParameters) {
                         display_set_state(SCREEN_RUNNING);
                         UIcalled = true; 
                     }
-                if (current_ma_global < 50.0f) { //al no ser el espejo ideal, no hay una clara correlación DAC-Corriente
+                if (current_ma_global < 5.0f) { // Corriente base 5 mA
                     // Verificación de límite inferior de seguridad para el DAC
                     if (current_dac_val<DAC_MAX_VAL) {
                         current_dac_val += DAC_STEP;
                         set_DAC_value(current_dac_val);
                         base_dac_val = current_dac_val; //guardo el último valor del DAC que me dio una lectura válida, por si tengo que volver a él.
                     } else {
-                        ESP_LOGW(TAG, "Impedancia Elevada. Límite de DAC alcanzado sin llegar a 20mA");
+                        ESP_LOGW(TAG, "Impedancia Elevada. Límite de DAC alcanzado sin llegar a 5 mA");
                         current_state = STATE_ERROR;
                     }
                 } else {
                     ESP_LOGI(TAG, "Límite alcanzado. Control cedido al usuario.");
+                    level = 1;
                     current_state = STATE_FUNC;
                 }
                 break;
@@ -152,22 +154,31 @@ void flyback_control_task(void *pvParameters) {
                         break;
                     }
                 //Seguridad, electros desconectados
-                    // Si estamos en un silencio programado, reseteamos el contador de error
+                    // If we are on a silence, the counter is reset. The value of the dac is reset to avoid spikes
                 if (bridge_silence) {
                     low_current_counter = 0; 
-                } 
-                // Si NO es silencio y la corriente es baja, empezamos a contar para el error
-                else if (current_ma_global < 3.0f) {  //Tengo que pensar en el límite
-                    low_current_counter++;
-                    if (low_current_counter > 5) { // 100ms de seguridad
-                        set_DAC_value(DAC_MIN_VAL); //apago DAC
-                        ESP_LOGW(TAG, "Electrodos desconectados");
-                        saved_dac_val = current_dac_val;
-                        current_state = STATE_STANDBY;
-                    }
-                } else {
-                    low_current_counter = 0;
+                    set_DAC_value(DAC_MIN_VAL);
+                    was_silenced = true;
+
                 }
+                else{
+                    if (was_silenced){
+                    set_DAC_value(current_dac_val);
+                    was_silenced= false;
+                    }
+                    // Si NO es silencio y la corriente es baja, empezamos a contar para el error
+                    if (current_ma_global < 3.0f) {  //Tengo que pensar en el límite
+                        low_current_counter++;
+                        if (low_current_counter > 5) { // 100ms de seguridad
+                            set_DAC_value(DAC_MIN_VAL); //apago DAC
+                            ESP_LOGW(TAG, "Electrodos desconectados");
+                            saved_dac_val = current_dac_val;
+                            current_state = STATE_STANDBY;
+                        }
+                    } else {
+                        low_current_counter = 0;
+                    }
+            }
                 uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
                 if (now - last_compen_time >= COMP_MS && !bridge_silence) {
                     last_compen_time = now;
@@ -190,20 +201,19 @@ void flyback_control_task(void *pvParameters) {
                         set_DAC_value(current_dac_val);
                     }
                 }
-                    //no espero a que llegue info
                 if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
                         if (io_num == UP_GPIO) {
-                                target_ma += 10.0f; // El usuario sube 5 mA, son 8 niveles
-                                //if (target_ma > 40.0f) target_ma = 40.0f; 
-                                if (target_ma > 100.0f) target_ma = 100.0f;     
+                                target_ma += 5.0f; // User chooses the level, 8 levels total
+                                if (target_ma > 40.0f) target_ma = 40.0f; 
+                                   
                         }
                         else if (io_num == DOWN_GPIO) {
-                            target_ma -= 10.0f;
+                            target_ma -= 5.0f;
                             if (target_ma < 0.0f) target_ma = 0.0f;
                         }
                     beep(50);
                     ESP_LOGI(TAG, "Nuevo Objetivo: %.1f mA (DAC actual: %d)", target_ma, current_dac_val);
-                    level = (int)(target_ma / 5.0f);   //nivel escogido por el usuario, de 0 a 8.
+                    level = (int)(target_ma / 5.0f);   //level chose by the user
                     }
                 break;
             case STATE_STANDBY:
@@ -262,10 +272,10 @@ void flyback_control_task(void *pvParameters) {
 
                 break;
             case STATE_DONE:
+                buzzer_alarm();
                 flyback_stop(WARN_DONE);
                 ESP_LOGI(TAG, "Programa completado");
                 vTaskSuspend(NULL); // Bloquea la tarea por seguridad
-                buzzer_alarm();
                 break;
             case STATE_ERROR:
                 flyback_stop(ERR_IMPEDANCE_HIGH);

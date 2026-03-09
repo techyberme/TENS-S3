@@ -7,7 +7,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
-#include "current_monitor.h"
+#include "adc_monitor.h"
 #include "flyback_control.h"
 
 
@@ -65,11 +65,11 @@ void monitor_task(void *pvParameters) {
                 int avg_volt=0;
                 adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt);
                 adc_cali_raw_to_voltage(cali_handle, avg_raw, &avg_volt);
-                float max_current = (float)max_volt / 10.0f; // Rsense = 10 ohm
-                float avg_current = (float)avg_volt / 10.0f; 
+                float max_current = (float)(max_volt-100) / 15.0f; // Rsense = 15 ohm
+                float avg_current = (float)(avg_volt-100) / 15.0f; 
                 current_ma_global = avg_current;
                 // SEGURIDAD CRÍTICA
-                if (max_current > 80.0f) { // Ejemplo: Límite 50mA
+                if (max_current > 50.0f) { // Ejemplo: Límite 50mA
                     flyback_stop(ERR_OVERCURRENT);
                 }
                                 
@@ -82,7 +82,7 @@ void current_monitor_calibrate_init(void) {
     ESP_LOGI(TAG, "Configurando esquema de calibración...");
     adc_cali_curve_fitting_config_t cali_config = {
         .unit_id = ADC_UNIT_1,
-        .atten = ADC_ATTEN,           
+        .atten = ADC_ATTEN_CURRENT,           
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
 
@@ -116,7 +116,7 @@ void current_monitor_init(void) {
     };
 
     adc_digi_pattern_config_t adc_pattern = {
-        .atten = ADC_ATTEN,
+        .atten = ADC_ATTEN_VOL,
         .channel = ADC_CHANNEL_2, // GPIO 3 en S3
         .unit = ADC_UNIT_1,
         .bit_width = ADC_BITWIDTH_12,
@@ -187,9 +187,8 @@ float get_voltage() {
     
     float avg_mv = sum / num_samples;
     
-    // Factor de conversión del divisor (1M ohm / 39k ohm)
     // V_real = V_adc * (R_high + R_low) / R_low
-    float factor = (1000.0f + 39.0f) / 39.0f;
+    float factor = (500.0f + 33.0f) / 33.0f;
     
     return (avg_mv / 1000.0f) * factor; 
 }
