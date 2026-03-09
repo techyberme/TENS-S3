@@ -8,45 +8,36 @@
 #define UP_GPIO  10
 #define DOWN_GPIO 11
 #define OK_GPIO 12
-#define DAC_STEP_USER   50  // Cuánto cambia el DAC por cada pulsación
-#define DAC_MIN_VAL    0 // 1550,tomo 1.4V como el salto de los bjts.
+#define DAC_MIN_VAL    0  
 #define DAC_TARGET_VAL  2095  // 0.05 mA para empezar
 #define DAC_MAX_VAL    4096  // tomo 1.4V como el salto de los bjts.
-#define TARGET_CURRENT   20    // Corriente mínima objetivo
 #define DAC_STEP         20    // 0,1 mA/salto
-#define SESSION_DURATION         5    //duración del programa en minutos
-#define SESSION_TICKS         (pdMS_TO_TICKS(SESSION_DURATION *60*1000))    //duración del programa en ticks
+#define SESSION_DURATION         5    
+#define SESSION_TICKS         (pdMS_TO_TICKS(SESSION_DURATION *60*1000))    
 /* --- Definiciones de Estados del Sistema --- */
 typedef enum {
     STATE_TIME,
     STATE_PROGRAM,
-    STATE_INIT,          // Inicialización de hardware
-    STATE_BASE,  // Bajada automática del DAC hasta alcanzar 20mA
-    STATE_FUNC,  // El usuario tiene el control mediante botones
-    STATE_STANDBY,          // Parada por desconexión de electrodos
+    STATE_INIT,          
+    STATE_BASE,             // 5 mA lookup phase
+    STATE_FUNC,             // Main State
+    STATE_STANDBY,          // Disconnected Electrodes
     STATE_RECU,
     STATE_DONE,
-    STATE_ERROR          // Parada de emergencia por fallo de lectura o hardware
+    STATE_ERROR          
 } system_state_t;
 
-/* --- Interfaz Pública --- */
 
 /**
- * @brief Tarea principal de control de la FSM.
- * Se encarga de la búsqueda de los 20mA y la gestión posterior.
+ * @brief Main system's task
  */
 void flyback_control_task(void *pvParameters);
 
 /**
- * @brief Retorna el estado actual del sistema.
- * Útil para que otras tareas (UI/Buttons) sepan si pueden actuar.
+ * @return Returns the system's state
  */
 system_state_t get_system_state(void);
 
 
-/**
- * @brief Inicialización de botones de control
- * Solo debería ser efectiva si el estado es STATE_USER_CONTROL.
- */
 void buttons_init(void);
-#endif // CONTROL_TASK_H
+#endif  

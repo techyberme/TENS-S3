@@ -6,7 +6,7 @@
 #include "esp_timer.h"
 #include "driver/mcpwm_prelude.h"
 #include "driver/gpio.h"
-#include "current_monitor.h"
+#include "adc_monitor.h"
 #include "hbridge_driver.h"
 #include "led_strip.h"
 
@@ -198,9 +198,9 @@ void voltage_control(void){
         float v_collector = get_voltage();
         //si sobra mucho voltaje
         if (v_collector > (V_MARGIN_TARGET +V_MARGIN_BAND)){
-            current_duty +=1; 
+            if (current_duty < 38) current_duty +=1; 
         }
-        else if (v_collector > (V_MARGIN_TARGET +V_MARGIN_BAND)){
+        else if (v_collector > (V_MARGIN_TARGET - V_MARGIN_BAND)){
             if (current_duty>1) current_duty -=1; 
         }
         set_pwm_duty_cycle(current_duty);
