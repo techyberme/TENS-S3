@@ -29,8 +29,7 @@ void buzzer_init(void) {
 }
 
 void beep(uint32_t duration_ms) {
-    // Frecuencia estándar de feedback (2.7 kHz es muy audible)
-    ledc_set_freq(BUZZER_MODE, BUZZER_TIMER, 2700);
+    ledc_set_freq(BUZZER_MODE, BUZZER_TIMER, 3500);
     
     // Activar sonido (Duty 50%)
     ledc_set_duty(BUZZER_MODE, BUZZER_CHANNEL, 4096);
@@ -46,8 +45,8 @@ void beep(uint32_t duration_ms) {
 
 void buzzer_alarm(){
     for (int i = 0; i < 3; i++) {
-        // Tono un poco más agudo para la alarma (3.5 kHz)
-        ledc_set_freq(BUZZER_MODE, BUZZER_TIMER, 3500);
+        // Tono un poco más agudo para la alarma (3 kHz)
+        ledc_set_freq(BUZZER_MODE, BUZZER_TIMER, 3000);
         ledc_set_duty(BUZZER_MODE, BUZZER_CHANNEL, 4096);
         ledc_update_duty(BUZZER_MODE, BUZZER_CHANNEL);
         

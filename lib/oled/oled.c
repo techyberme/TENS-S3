@@ -98,7 +98,7 @@ static void draw_time_screen() {
     u8g2_DrawStr(&u8g2, 15, 30, "Tiempo");
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinkn
-    if ((now / 500) % 2 == 0){
+    if ((now / 400) % 2 == 0){
         // Valor de los minutos (Grande)
         int mins = duration_session;
         int secs = 0;
