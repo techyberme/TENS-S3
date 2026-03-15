@@ -5,8 +5,10 @@
 #include "esp_err.h"
 
 
-#define HBRIDGE_GPIO_A  4
-#define HBRIDGE_GPIO_B  5
+#define HBRIDGE_GPIO_A1  4
+#define HBRIDGE_GPIO_B1  5
+#define HBRIDGE_GPIO_A2  14
+#define HBRIDGE_GPIO_B2  15
 
 typedef enum {
     TENS_MODE_CONTINUO, // 4 kHz constante
@@ -18,6 +20,8 @@ typedef enum {
 void hbridge_init(uint32_t deadtime_ticks);
 
 void hbridge_stop(void);
+
+void hbridge_set_mode(tens_mode_t mode);
 
 
 #endif

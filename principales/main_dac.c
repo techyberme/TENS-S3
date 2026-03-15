@@ -15,7 +15,7 @@ static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time_up = 0;
 static uint32_t last_intr_time_down = 0;
-static uint16_t rc_val = 0;
+static uint16_t dac_val = 0;
 float real_dac = 0.;
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     uint32_t current_time = xTaskGetTickCountFromISR();
@@ -52,8 +52,9 @@ void buttons_init(void) {
 void app_main(void) {
     // 1. Inicialización de periféricos
     buttons_init();
-    rcfilter_init();
+    recfilter_init();
     uint32_t last_log_time = 0;
+    
     ESP_LOGI(TAG, "I2C y GPIO inicializados.");
 
 
@@ -62,24 +63,24 @@ void app_main(void) {
         
         if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
             if (io_num == CURRENT_UP_GPIO) {
-                    if (rc_val < 37) {
-                                rc_val+= 1;
+                    if (dac_val < 4045) {
+                                dac_val+= 50;
                             }
                             else{
-                                rc_val=38;
+                                dac_val=4095;
                             }
                         
-                        set_pwm_duty_cycle(rc_val);
+                        set_DAC_value(dac_val);
 
                 }
             else if (io_num == CURRENT_DOWN_GPIO) {
-                            if (rc_val > 1) {
-                                rc_val-= 1;
+                            if (dac_val > 50) {
+                                dac_val-= 50;
                             }
                             else{
-                                rc_val=0;
+                                dac_val=0;
                             }
-                            set_pwm_duty_cycle(rc_val);
+                            set_DAC_value(dac_val);
             }
         }
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -90,9 +91,9 @@ void app_main(void) {
         
         if (now - last_log_time > 1000) {
             // Imprimimos la lectura del ADC que la otra tarea está actualizando
-            real_dac = 3.3 * rc_val/100;
-            ESP_LOGI(TAG, "Duty cycle: %d | Real: %.2f V", 
-                      rc_val, real_dac);
+            real_dac = dac_val * 3.3/4096;
+            ESP_LOGI(TAG, "DAC: %d | Real (ADC): %.2f V", 
+                    dac_val, real_dac);
             last_log_time = now;
         }
         vTaskDelay(pdMS_TO_TICKS(20));

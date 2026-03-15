@@ -27,7 +27,7 @@ float target_ma = 50.0f; //valor inicial
 float max_ma = 50.0f; //valor inicial
 int level= 1;
 int program =1;
-extern volatile bool bridge_silence;
+extern volatile bool A_bridge_silence;
 static QueueHandle_t gpio_evt_queue = NULL;
 uint32_t time_session= 0;
 uint32_t duration_session= SESSION_DURATION;
@@ -155,7 +155,7 @@ void flyback_control_task(void *pvParameters) {
                     }
                 //Seguridad, electros desconectados
                     // If we are on a silence, the counter is reset. The value of the dac is reset to avoid spikes
-                if (bridge_silence) {
+                if (A_bridge_silence) {
                     low_current_counter = 0; 
                     set_DAC_value(DAC_MIN_VAL);
                     was_silenced = true;
@@ -180,7 +180,7 @@ void flyback_control_task(void *pvParameters) {
                     }
             }
                 uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                if (now - last_compen_time >= COMP_MS && !bridge_silence) {
+                if (now - last_compen_time >= COMP_MS && !A_bridge_silence) {
                     last_compen_time = now;
                     float error = target_ma - current_ma_global;
                     //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
