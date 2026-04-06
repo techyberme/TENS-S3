@@ -9,8 +9,8 @@ void buzzer_init(void) {
     ledc_timer_config_t ledc_timer = {
         .speed_mode       = BUZZER_MODE,
         .timer_num        = BUZZER_TIMER,
-        .duty_resolution  = LEDC_TIMER_13_BIT, // Resolución de 13 bits (0-8191)
-        .freq_hz          = 2000,              // Frecuencia inicial 2kHz
+        .duty_resolution  = LEDC_TIMER_13_BIT, 
+        .freq_hz          = 2000,              
         .clk_cfg          = LEDC_AUTO_CLK
     };
     ledc_timer_config(&ledc_timer);
@@ -22,7 +22,7 @@ void buzzer_init(void) {
         .timer_sel      = BUZZER_TIMER,
         .intr_type      = LEDC_INTR_DISABLE,
         .gpio_num       = BUZZER_GPIO,
-        .duty           = 0,                   // Empezamos apagado
+        .duty           = 0,                   //OFF
         .hpoint         = 0
     };
     ledc_channel_config(&ledc_channel);
@@ -31,21 +31,21 @@ void buzzer_init(void) {
 void beep(uint32_t duration_ms) {
     ledc_set_freq(BUZZER_MODE, BUZZER_TIMER, 3500);
     
-    // Activar sonido (Duty 50%)
+    // DC: 50%
     ledc_set_duty(BUZZER_MODE, BUZZER_CHANNEL, 4096);
     ledc_update_duty(BUZZER_MODE, BUZZER_CHANNEL);
 
-    // Esperar la duración del pitido
+    // Wait for the specified duration
     vTaskDelay(pdMS_TO_TICKS(duration_ms));
 
-    // Apagar el sonido (Duty 0%)
+    // Turn off the buzzer
     ledc_set_duty(BUZZER_MODE, BUZZER_CHANNEL, 0);
     ledc_update_duty(BUZZER_MODE, BUZZER_CHANNEL);
 }
 
 void buzzer_alarm(){
     for (int i = 0; i < 3; i++) {
-        // Tono un poco más agudo para la alarma (3 kHz)
+        // High pitch noise for the alarm
         ledc_set_freq(BUZZER_MODE, BUZZER_TIMER, 3000);
         ledc_set_duty(BUZZER_MODE, BUZZER_CHANNEL, 4096);
         ledc_update_duty(BUZZER_MODE, BUZZER_CHANNEL);
@@ -55,7 +55,7 @@ void buzzer_alarm(){
         ledc_set_duty(BUZZER_MODE, BUZZER_CHANNEL, 0);
         ledc_update_duty(BUZZER_MODE, BUZZER_CHANNEL);
         
-        vTaskDelay(pdMS_TO_TICKS(100)); // Silencio corto
+        vTaskDelay(pdMS_TO_TICKS(100)); 
     }
 
 }

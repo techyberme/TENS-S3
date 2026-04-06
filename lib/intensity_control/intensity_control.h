@@ -14,6 +14,10 @@
 #define DAC_STEP         20    // 0,1 mA/salto
 #define SESSION_DURATION         5    
 #define SESSION_TICKS         (pdMS_TO_TICKS(SESSION_DURATION *60*1000))    
+//button logic
+#define POLL_RATE_MS       20
+#define UNLOCK_HOLD_TICKS  (2000 / POLL_RATE_MS) // 100 ticks = 2 seconds
+#define LOCK_TIMEOUT_TICKS (5000 / POLL_RATE_MS)
 /* --- Definiciones de Estados del Sistema --- */
 typedef enum {
     STATE_TIME,
@@ -27,6 +31,13 @@ typedef enum {
     STATE_ERROR          
 } system_state_t;
 
+/* Buttons*/
+typedef enum {
+    LOCKED_STATE, 
+    UNLOCKING_STATE,         
+    UNLOCKED_STATE_A,         
+    UNLOCKED_STATE_B,                     
+} button_state_t;
 
 /**
  * @brief Main system's task
@@ -37,6 +48,11 @@ void flyback_control_task(void *pvParameters);
  * @return Returns the system's state
  */
 system_state_t get_system_state(void);
+
+/**
+ * @return Returns the buttons's state
+ */
+button_state_t get_button_state(void);
 
 
 void buttons_init(void);

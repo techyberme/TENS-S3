@@ -13,6 +13,9 @@
 #define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
 static system_state_t current_state = STATE_TIME;
+static button_state_t button_state = LOCKED_STATE;
+static uint32_t hold_counter = 0;
+static uint32_t inactivity_counter = 0;
 static uint16_t current_dac_val = DAC_MIN_VAL;
 static uint16_t saved_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
 static uint16_t base_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
@@ -23,49 +26,36 @@ static bool UIcalled = false;   //used to call the UI just one
 static bool was_silenced = false; //dac silences
 uint32_t io_num;
 extern volatile float current_ma_global;
-float target_ma = 50.0f; //valor inicial
 float max_ma = 50.0f; //valor inicial
-int level= 1;
+int level_A= 1;
+int level_B= 1;
 int program =1;
 extern volatile bool A_bridge_silence;
-static QueueHandle_t gpio_evt_queue = NULL;
 uint32_t time_session= 0;
 uint32_t duration_session= SESSION_DURATION;
-static uint32_t last_intr_time = 0; // Tiempo de la última interrupción válida
-// Manejador de la interrupción (ISR)
-static void IRAM_ATTR gpio_isr_handler(void* arg) {
-    uint32_t current_time = xTaskGetTickCountFromISR();
-    uint32_t gpio_num = (uint32_t) arg;
-    //200 ms desde la última que se ha pulsado el botón, para evitar oscilaciones
-    if ((current_time - last_intr_time) > pdMS_TO_TICKS(200)) {
-        xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
-        last_intr_time = current_time;
-    }
-}
+
 system_state_t get_system_state(void) {
     return current_state;
+}
+button_state_t get_button_state(void) {
+    return button_state;
 }
 void buttons_init(void) {
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << UP_GPIO) | (1ULL << DOWN_GPIO) | (1ULL << OK_GPIO),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
-        .intr_type = GPIO_INTR_NEGEDGE // Se activa al presionar (flanco de bajada)
+        .intr_type = GPIO_INTR_DISABLE // Desactivar interrupciones
     };
     gpio_config(&io_conf);
-    // Crear la cola para 10 eventos
-    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
-
-    // Instalar el servicio de ISR y añadir manejadores
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(UP_GPIO, gpio_isr_handler, (void*) UP_GPIO);   //(se inicia, función, argumento ISR)
-    gpio_isr_handler_add(DOWN_GPIO, gpio_isr_handler, (void*) DOWN_GPIO);
-    gpio_isr_handler_add(OK_GPIO, gpio_isr_handler, (void*) OK_GPIO);
 }
 void flyback_control_task(void *pvParameters) {
     // 1. Asegurar estado inicial seguro
     flyback_enable(true); 
     set_DAC_value(current_dac_val);
+    bool last_up_state = false;
+    bool last_down_state = false;
+    bool last_ok_state = false;
     current_state = STATE_TIME;
     TickType_t xLastWakeTime = xTaskGetTickCount(); //Inicializo, después la tarea se encarga de actualizarla
     const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50 Hz exactos
@@ -74,52 +64,57 @@ void flyback_control_task(void *pvParameters) {
 
     while(1) {         
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
+        bool ok_pressed = (gpio_get_level(OK_GPIO) == 0);
+        bool up_pressed = (gpio_get_level(UP_GPIO) == 0);
+        bool down_pressed = (gpio_get_level(DOWN_GPIO) == 0);
+
+        // Detección de flanco de subida (solo dispara 1 vez por pulsación)
+        bool up_trigger = (up_pressed && !last_up_state);
+        bool down_trigger = (down_pressed && !last_down_state);
+        bool ok_trigger = (ok_pressed && !last_ok_state);
+
+        last_up_state = up_pressed;
+        last_down_state = down_pressed;
+        last_ok_state = ok_pressed;
         switch (current_state) {
             case STATE_TIME:
                 if (!UIcalled){
                     display_set_state(SCREEN_CONFIG_TIME);
                     UIcalled = true; 
                 }
-                
-                if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
-                        if (io_num == UP_GPIO) {
-                                duration_session += 1; // 1 minute up
-                                if (duration_session > 40) duration_session = 40;     
-                        }
-                        else if (io_num == DOWN_GPIO) {
-                            duration_session -= 1; // 1 minute down
-                                if (duration_session < 5) duration_session = 5;    
-                        }
-                        else if (io_num == OK_GPIO) {
-                            current_state= STATE_PROGRAM;
-                            UIcalled= false;
-                        }
+                if (up_trigger) {
+                    duration_session += 1;
+                    if (duration_session > 40) duration_session = 40;     
                     beep(50);
-                    ESP_LOGI(TAG, "Nuevo Tiempo: %d minutos", duration_session);
-                    }
+                } else if (down_trigger) {
+                    duration_session -= 1;
+                    if (duration_session < 5) duration_session = 5;    
+                    beep(50);
+                } else if (ok_trigger) {
+                    current_state = STATE_PROGRAM;
+                    UIcalled = false;
+                    beep(50);
+                }
                 break;
             case STATE_PROGRAM:
                 if (!UIcalled){
                         display_set_state(SCREEN_CONFIG_PROG);
                         UIcalled = true; 
                     }
-                
-                if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
-                        if (io_num == UP_GPIO) {
-                                program += 1; 
-                                if (program > 5) program= 5;     
-                        }
-                        else if (io_num == DOWN_GPIO) {
-                            program -= 1; 
-                                if (program < 1) program = 1;    
-                        }
-                        else if (io_num == OK_GPIO) {
-                            current_state= STATE_BASE;
-                            UIcalled= false;
-                        }
+                if (up_trigger) {
+                    program += 1;
+                    if (program > 5) program = 5;     
                     beep(50);
-                    ESP_LOGI(TAG, "Programa: %d", program);
-                    }
+                } else if (down_trigger) {
+                    program -= 1;
+                    if (program < 1) program = 1;    
+                    beep(50);
+                } else if (ok_trigger) {
+                    current_state = STATE_BASE;
+                    UIcalled = false;
+                    beep(50);
+                }
+                ESP_LOGI(TAG, "Programa: %d", program);
                 break;
             case STATE_BASE:
                 if (!UIcalled){
@@ -138,7 +133,7 @@ void flyback_control_task(void *pvParameters) {
                     }
                 } else {
                     ESP_LOGI(TAG, "Límite alcanzado. Control cedido al usuario.");
-                    level = 1;
+                    level_A = 1;
                     current_state = STATE_FUNC;
                 }
                 break;
@@ -179,41 +174,101 @@ void flyback_control_task(void *pvParameters) {
                         low_current_counter = 0;
                     }
             }
-                uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                if (now - last_compen_time >= COMP_MS && !A_bridge_silence) {
-                    last_compen_time = now;
-                    float error = target_ma - current_ma_global;
-                    //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
-                    if (fabs(error) > 2.0f) { 
-                        if (error > 0) {
-                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 50;
-                        } else {
-                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 50;
+                //uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                // if (now - last_compen_time >= COMP_MS && !A_bridge_silence) {
+                //     last_compen_time = now;
+                //     float error = target_ma - current_ma_global;
+                //     //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
+                //     if (fabs(error) > 2.0f) { 
+                //         if (error > 0) {
+                //             if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 50;
+                //         } else {
+                //             if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 50;
+                //         }
+                //         set_DAC_value(current_dac_val);
+                //     }
+                //     else if (fabs(error) > 0.5f) { 
+                //         if (error > 0) {
+                //             if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 10;
+                //         } else {
+                //             if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 10;
+                //         }
+                //         set_DAC_value(current_dac_val);
+                //     }
+                // }
+                switch (button_state) {
+                    case LOCKED_STATE:
+                        if (ok_pressed) {
+                            button_state = UNLOCKING_STATE;
+                            hold_counter = 0;
                         }
-                        set_DAC_value(current_dac_val);
-                    }
-                    else if (fabs(error) > 0.5f) { 
-                        if (error > 0) {
-                            if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 10;
-                        } else {
-                            if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 10;
+                        break;
+
+                    case UNLOCKING_STATE:
+                        if (ok_pressed) {
+                            hold_counter++;
+                            if (hold_counter >= UNLOCK_HOLD_TICKS) {
+                                button_state = UNLOCKED_STATE_A;
+                                inactivity_counter = 0;
+                                beep(200);
+                                ESP_LOGI(TAG, "Level A unlocked");
+                            }
                         }
-                        set_DAC_value(current_dac_val);
-                    }
-                }
-                if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
-                        if (io_num == UP_GPIO) {
-                                target_ma += 5.0f; // User chooses the level, 8 levels total
-                                if (target_ma > 40.0f) target_ma = 40.0f; 
-                                   
+                        else button_state = LOCKED_STATE;  
+                            break;
+                    case UNLOCKED_STATE_A:
+                        inactivity_counter++;
+                        if (up_trigger) {
+                            level_A++;
+                            if (level_A > 8) level_A = 8; 
+                            inactivity_counter = 0;    
+                            beep(50);
+                        } else if (down_trigger) {
+                            level_A--;
+                            if (level_A < 0) level_A = 0; 
+                            inactivity_counter = 0;   
+                            beep(50);
+                        } else if (ok_trigger) {
+                            button_state = UNLOCKED_STATE_B;
+                            inactivity_counter = 0;
+                            beep(100);
+                            ESP_LOGI(TAG, "Level B unlocked");
                         }
-                        else if (io_num == DOWN_GPIO) {
-                            target_ma -= 5.0f;
-                            if (target_ma < 0.0f) target_ma = 0.0f;
+                        if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
+                            button_state = LOCKED_STATE;
+                            inactivity_counter = 0;
+                            beep(200);
+                            ESP_LOGI(TAG, "Buttons locked due to inactivity");
                         }
-                    beep(50);
-                    ESP_LOGI(TAG, "Nuevo Objetivo: %.1f mA (DAC actual: %d)", target_ma, current_dac_val);
-                    level = (int)(target_ma / 5.0f);   //level chose by the user
+                        break;
+                    case UNLOCKED_STATE_B:
+                        inactivity_counter++;
+                        if (up_trigger) {
+                            level_B++;
+                            if (level_B > 8) level_B = 8;   
+                            inactivity_counter = 0;  
+                            beep(50);
+                        } else if (down_trigger) {
+                            level_B--;
+                            if (level_B < 0) level_B = 0;
+                            inactivity_counter = 0;    
+                            beep(50);
+                        } else if (ok_trigger) {
+                            button_state = UNLOCKED_STATE_A;
+                            inactivity_counter = 0;
+                            beep(100);
+                            ESP_LOGI(TAG, "Level A unlocked");
+                        }
+                        if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
+                            button_state = LOCKED_STATE;
+                            inactivity_counter = 0;
+                            beep(200);
+                            ESP_LOGI(TAG, "Buttons locked due to inactivity");
+                        }
+                        break;
+                    default:
+                        break;
+
                     }
                 break;
             case STATE_STANDBY:
@@ -228,37 +283,42 @@ void flyback_control_task(void *pvParameters) {
             */
                 static uint32_t last_poll_time = 0;
                 uint32_t current_time = esp_log_timestamp();
-                if (current_time - last_poll_time > 500) { // Probar cada 500ms
-                last_poll_time = current_time;
-
-                // 2. Breve pulso de sondeo a 5 mA (o el mínimo de tu hardware)
-                set_DAC_value(base_dac_val);
-                // Pequeño delay para estabilización de la malla analógica
-                vTaskDelay(pdMS_TO_TICKS(10)); // 10 ms, para que de tiempo a medir la corriente.
-                // 3. Evaluar si hay contacto
-                if (current_ma_global >= 3.0f) {
-                    recovery_counter++;
+                //Auxiliary varuable to avoid calling the DAC too soon.
+                static bool pulse_active = false;
+                if (!pulse_active) {
+                    if (current_time - last_poll_time > 500) {
+                        set_DAC_value(base_dac_val); // Initiate a pulse to check for contact
+                        pulse_active = true;
+                        last_poll_time = current_time;
+                    }
                 } else {
-                    recovery_counter = 0;
-                    set_DAC_value(DAC_MIN_VAL); // Volver a seguridad inmediatamente
-                }
-            }
-            if (recovery_counter >= 3) {
-                ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
-                // IMPORTANTE: No vuelvo de golpe a la corriente anterior.
-                current_dac_val= base_dac_val;  //vuelvo al valor mínimo
-                set_DAC_value(base_dac_val);
-                current_state = STATE_RECU; 
-                recovery_counter = 0;
-            }
+                    // 20 ms after the pulse starts, check the current
+                    if (current_ma_global >= 3.0f) {
+                        recovery_counter++;
+                    } else {
+                        recovery_counter = 0;
+                        set_DAC_value(DAC_MIN_VAL); // Apagar pulso
+                        pulse_active = false;
+                    }
+                
+                    if (recovery_counter >= 3) {
+                        ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
+                        // IMPORTANTE: No vuelvo de golpe a la corriente anterior.
+                        current_dac_val= base_dac_val;  //vuelvo al valor mínimo
+                        set_DAC_value(base_dac_val);
+                        current_state = STATE_RECU; 
+                        recovery_counter = 0;
+                        pulse_active = false;
+                    }
+                    }
+        
                 break;
             case STATE_RECU:
-                if (current_dac_val<saved_dac_val){
+                if (current_dac_val < saved_dac_val){
                     current_dac_val += DAC_STEP;
                     set_DAC_value(current_dac_val);
-                    vTaskDelay(pdMS_TO_TICKS(10)); // 10 ms, para que de tiempo a medir la corriente.
                     if (current_ma_global< 3.0f) { 
-                        // Si se pierde el contacto otra vez durante la rampa, abortar
+                        // If contact is lost, go back to standby.
                         ESP_LOGI(TAG, "Contacto perdido durante recuperación");
                         set_DAC_value(DAC_MIN_VAL);
                         current_state = STATE_STANDBY;

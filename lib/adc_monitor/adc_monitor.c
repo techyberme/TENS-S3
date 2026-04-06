@@ -116,7 +116,7 @@ void current_monitor_init(void) {
     };
 
     adc_digi_pattern_config_t adc_pattern = {
-        .atten = ADC_ATTEN_VOL,
+        .atten = ADC_ATTEN_CURRENT,
         .channel = ADC_CHANNEL_2, // GPIO 3 en S3
         .unit = ADC_UNIT_1,
         .bit_width = ADC_BITWIDTH_12,

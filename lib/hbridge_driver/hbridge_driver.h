@@ -11,7 +11,7 @@
 #define HBRIDGE_GPIO_B2  15
 
 typedef enum {
-    TENS_MODE_CONTINUO, // 4 kHz constante
+    TENS_MODE_CONTINUO, // 4 kHz c 
     TENS_MODE_BURST,      // 4 kHz modulated at 100 Hz
     TENS_MODE_OFF         
 } tens_mode_t;

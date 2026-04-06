@@ -13,7 +13,8 @@ static u8g2_t u8g2;
 extern uint32_t time_session;
 extern uint32_t duration_session;
 extern int program;
-extern int level;
+extern int level_A;
+extern int level_B;
 const unsigned char logo[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -97,7 +98,7 @@ static void draw_time_screen() {
     u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
     u8g2_DrawStr(&u8g2, 15, 30, "Tiempo");
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    //Blinkn
+    //Blinking
     if ((now / 400) % 2 == 0){
         // Valor de los minutos (Grande)
         int mins = duration_session;
@@ -148,24 +149,49 @@ static void draw_main_ui()
     char buf[16];
                     // Categories
     u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
-    u8g2_DrawStr(&u8g2, 10, 20, "Nivel");
-    u8g2_DrawStr(&u8g2, 80, 20, "Prog");
+    u8g2_DrawStr(&u8g2, 10, 20, "Nivel A");
+    u8g2_DrawStr(&u8g2, 80, 20, "Nivel B");
 
-                    // Values
+    // Values
     u8g2_SetFont(&u8g2, u8g2_font_fub20_tn); 
-                    // Level
-    sprintf(buf, "%d",level);
-    u8g2_DrawStr(&u8g2, 15, 42, buf);  
-                    // Program
-    sprintf(buf, "%d",program);
-    u8g2_DrawStr(&u8g2, 85, 42, buf); 
+    button_state_t button_state = get_button_state();
 
-                    
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    //Blinking
+    if (button_state == UNLOCKED_STATE_A){
+        if ((now / 500) % 2 == 0){
+         // Level A
+        sprintf(buf, "%d",level_A);
+        u8g2_DrawStr(&u8g2, 15, 42, buf);  
+        }
+    }
+    else{
+         // Level A
+    sprintf(buf, "%d",level_A);
+    u8g2_DrawStr(&u8g2, 15, 42, buf);
+    }
+    if (button_state == UNLOCKED_STATE_B){
+        if ((now / 500) % 2 == 0){
+         // Level B
+        sprintf(buf, "%d",level_B);
+        u8g2_DrawStr(&u8g2, 85, 42, buf); 
+        }
+    }
+    else{
+         // Level B
+        sprintf(buf, "%d",level_B);
+        u8g2_DrawStr(&u8g2, 85, 42, buf);
+    }
+
+                  
     u8g2_DrawHLine(&u8g2, 0, 42, 128); 
 
     // Time left
     //duration_session(mins) * 60 *1000
-    int ms_left=  duration_session * 60 *1000 - pdTICKS_TO_MS(time_session);            
+    int ms_left=  duration_session * 60 *1000 - pdTICKS_TO_MS(time_session);   
+    //in case there's a mismatch, avoid showing negative time.
+
+    if (ms_left < 0) ms_left = 0;         
                     
     int mins = ms_left/1000/ 60;
     int secs = ms_left/1000 % 60;

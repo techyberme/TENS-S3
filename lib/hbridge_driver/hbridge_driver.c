@@ -10,10 +10,10 @@ static const char *TAG = "H-Bridge";
 static mcpwm_oper_handle_t operators[2];
 static mcpwm_cmpr_handle_t comparators[2];
 static mcpwm_gen_handle_t generators[4];
-static mcpwm_timer_handle_t timer = NULL;  //Base de tiempo
+static mcpwm_timer_handle_t timer = NULL;  //Time base
 static tens_mode_t current_mode = TENS_MODE_CONTINUO;
-volatile bool A_bridge_silence = false; //volátil para que lo lea siempre
-volatile bool B_bridge_silence = false; //volátil para que lo lea siempre
+volatile bool A_bridge_silence = false; //volatile to be constantly read.
+volatile bool B_bridge_silence = false; 
 
 // Timer 100 Hz
 static void burst_callback(void* arg) {
@@ -21,7 +21,7 @@ static void burst_callback(void* arg) {
     // If burst, commute
     if (current_mode == TENS_MODE_BURST) {
         if (output_en) {
-            mcpwm_generator_set_force_level(generators[0], -1, true);  //-1 quita el forzado
+            mcpwm_generator_set_force_level(generators[0], -1, true);  //-1 turns off the force level.
             mcpwm_generator_set_force_level(generators[1], -1, true);
             mcpwm_generator_set_force_level(generators[2], 0, true);  
             mcpwm_generator_set_force_level(generators[3], 0, true);
@@ -85,10 +85,11 @@ void hbridge_init(uint32_t deadtime_ticks)
     for (int i=0; i<2; i++){
     ESP_LOGI(TAG, "Set generator action on timer and compare event");
     int gen_idx = i * 2;
-    //First HBridge, A1
+    //Timer Event
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(generators[gen_idx],
         MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
         MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+    //Comparator Event
     ESP_ERROR_CHECK(mcpwm_generator_set_actions_on_compare_event(generators[gen_idx],
         MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
         comparators[i], MCPWM_GEN_ACTION_LOW))); 
@@ -106,7 +107,8 @@ void hbridge_init(uint32_t deadtime_ticks)
       .flags.invert_output = true,
     };
     //Deadtime only can be assigned one posedge or negedge for both PWM on the same operator.
-    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx + 1], &dt_config));  //generator 0 controls generator 1 so we don't need to define gen. 1
+    //Generator 0 controls Generator 1 so we don't need to define gen. 1
+    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx + 1], &dt_config));  
     }
     
     // --- 100 Hz BURST ---
@@ -119,8 +121,7 @@ void hbridge_init(uint32_t deadtime_ticks)
     //Timer creation
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &burst_timer));
     
-    // 100 Hz -> Periodo 10ms. (5000us)
-    //50% DC
+    // 100 Hz -> T = 5000us
     ESP_ERROR_CHECK(esp_timer_start_periodic(burst_timer, 5000));
 
     ESP_LOGI(TAG, "Enable and start timer");
@@ -136,7 +137,6 @@ void hbridge_stop(void){
 }
 
 
-
 void hbridge_set_mode(tens_mode_t mode) {
     // Change from BURST to continous, make sure no gen is forced
     if (current_mode == TENS_MODE_BURST && mode != TENS_MODE_BURST) {
@@ -147,6 +147,5 @@ void hbridge_set_mode(tens_mode_t mode) {
         B_bridge_silence = false;
         ESP_LOGI(TAG, "Freed generators");
     }
-    
     current_mode = mode;
 }
