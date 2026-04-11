@@ -16,9 +16,14 @@ static system_state_t current_state = STATE_TIME;
 static button_state_t button_state = LOCKED_STATE;
 static uint32_t hold_counter = 0;
 static uint32_t inactivity_counter = 0;
-static uint16_t current_dac_val = DAC_MIN_VAL;
-static uint16_t saved_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
-static uint16_t base_dac_val = DAC_MIN_VAL; //me sirve para guardar el DAC_valor en standby
+float max_ma = 50.0f; //valor inicial
+int level_A= 1;
+int level_B= 1;
+int program =1;
+static int saved_level_A = 1; //standby auxiliary value
+static int saved_level_B = 1;
+static int recovery_level = RECOVER_LEVEL; 
+
 static uint16_t low_current_counter = 0;    
 static uint16_t recovery_counter = 0;   
 static uint32_t last_compen_time = 0;
@@ -26,10 +31,6 @@ static bool UIcalled = false;   //used to call the UI just one
 static bool was_silenced = false; //dac silences
 uint32_t io_num;
 extern volatile float current_ma_global;
-float max_ma = 50.0f; //valor inicial
-int level_A= 1;
-int level_B= 1;
-int program =1;
 extern volatile bool A_bridge_silence;
 uint32_t time_session= 0;
 uint32_t duration_session= SESSION_DURATION;
@@ -52,7 +53,7 @@ void buttons_init(void) {
 void flyback_control_task(void *pvParameters) {
     // 1. Asegurar estado inicial seguro
     flyback_enable(true); 
-    set_DAC_value(current_dac_val);
+    set_DAC_value(level_A);
     bool last_up_state = false;
     bool last_down_state = false;
     bool last_ok_state = false;
@@ -110,32 +111,11 @@ void flyback_control_task(void *pvParameters) {
                     if (program < 1) program = 1;    
                     beep(50);
                 } else if (ok_trigger) {
-                    current_state = STATE_BASE;
+                    current_state = STATE_FUNC;
                     UIcalled = false;
                     beep(50);
                 }
                 ESP_LOGI(TAG, "Programa: %d", program);
-                break;
-            case STATE_BASE:
-                if (!UIcalled){
-                        display_set_state(SCREEN_RUNNING);
-                        UIcalled = true; 
-                    }
-                if (current_ma_global < 5.0f) { // Corriente base 5 mA
-                    // Verificación de límite inferior de seguridad para el DAC
-                    if (current_dac_val<DAC_MAX_VAL) {
-                        current_dac_val += DAC_STEP;
-                        set_DAC_value(current_dac_val);
-                        base_dac_val = current_dac_val; //guardo el último valor del DAC que me dio una lectura válida, por si tengo que volver a él.
-                    } else {
-                        ESP_LOGW(TAG, "Impedancia Elevada. Límite de DAC alcanzado sin llegar a 5 mA");
-                        current_state = STATE_ERROR;
-                    }
-                } else {
-                    ESP_LOGI(TAG, "Límite alcanzado. Control cedido al usuario.");
-                    level_A = 1;
-                    current_state = STATE_FUNC;
-                }
                 break;
 
             // Dentro de flyback_control_task...
@@ -152,50 +132,28 @@ void flyback_control_task(void *pvParameters) {
                     // If we are on a silence, the counter is reset. The value of the dac is reset to avoid spikes
                 if (A_bridge_silence) {
                     low_current_counter = 0; 
-                    set_DAC_value(DAC_MIN_VAL);
+                    set_DAC_value(0); 
                     was_silenced = true;
 
                 }
                 else{
                     if (was_silenced){
-                    set_DAC_value(current_dac_val);
+                    set_DAC_value(level_A); //back to previous value.
                     was_silenced= false;
                     }
-                    // Si NO es silencio y la corriente es baja, empezamos a contar para el error
+                    // if it's not a dead time, and current is low, we start counting 
                     if (current_ma_global < 3.0f) {  //Tengo que pensar en el límite
                         low_current_counter++;
                         if (low_current_counter > 5) { // 100ms de seguridad
-                            set_DAC_value(DAC_MIN_VAL); //apago DAC
+                            set_DAC_value(0); //DAC down for safety
                             ESP_LOGW(TAG, "Electrodos desconectados");
-                            saved_dac_val = current_dac_val;
+                            saved_level_A= level_A;
                             current_state = STATE_STANDBY;
                         }
                     } else {
                         low_current_counter = 0;
                     }
             }
-                //uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                // if (now - last_compen_time >= COMP_MS && !A_bridge_silence) {
-                //     last_compen_time = now;
-                //     float error = target_ma - current_ma_global;
-                //     //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
-                //     if (fabs(error) > 2.0f) { 
-                //         if (error > 0) {
-                //             if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 50;
-                //         } else {
-                //             if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 50;
-                //         }
-                //         set_DAC_value(current_dac_val);
-                //     }
-                //     else if (fabs(error) > 0.5f) { 
-                //         if (error > 0) {
-                //             if (current_dac_val < DAC_MAX_VAL) current_dac_val+= 10;
-                //         } else {
-                //             if (current_dac_val > DAC_MIN_VAL) current_dac_val-= 10;
-                //         }
-                //         set_DAC_value(current_dac_val);
-                //     }
-                // }
                 switch (button_state) {
                     case LOCKED_STATE:
                         if (ok_pressed) {
@@ -220,12 +178,14 @@ void flyback_control_task(void *pvParameters) {
                         inactivity_counter++;
                         if (up_trigger) {
                             level_A++;
-                            if (level_A > 8) level_A = 8; 
+                            if (level_A > 20) level_A = 20; 
+                            set_DAC_value(level_A);
                             inactivity_counter = 0;    
                             beep(50);
                         } else if (down_trigger) {
                             level_A--;
                             if (level_A < 0) level_A = 0; 
+                            set_DAC_value(level_A);
                             inactivity_counter = 0;   
                             beep(50);
                         } else if (ok_trigger) {
@@ -245,12 +205,14 @@ void flyback_control_task(void *pvParameters) {
                         inactivity_counter++;
                         if (up_trigger) {
                             level_B++;
-                            if (level_B > 8) level_B = 8;   
+                            if (level_B > 20) level_B = 20;   
+                            set_DAC_value(level_B); 
                             inactivity_counter = 0;  
                             beep(50);
                         } else if (down_trigger) {
                             level_B--;
                             if (level_B < 0) level_B = 0;
+                            set_DAC_value(level_B); 
                             inactivity_counter = 0;    
                             beep(50);
                         } else if (ok_trigger) {
@@ -287,7 +249,7 @@ void flyback_control_task(void *pvParameters) {
                 static bool pulse_active = false;
                 if (!pulse_active) {
                     if (current_time - last_poll_time > 500) {
-                        set_DAC_value(base_dac_val); // Initiate a pulse to check for contact
+                        set_DAC_value(recovery_level); // Initiate a 6 mA pulse to check for contact
                         pulse_active = true;
                         last_poll_time = current_time;
                     }
@@ -297,15 +259,15 @@ void flyback_control_task(void *pvParameters) {
                         recovery_counter++;
                     } else {
                         recovery_counter = 0;
-                        set_DAC_value(DAC_MIN_VAL); // Apagar pulso
+                        set_DAC_value(0); // Apagar pulso
                         pulse_active = false;
                     }
                 
                     if (recovery_counter >= 3) {
                         ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
                         // IMPORTANTE: No vuelvo de golpe a la corriente anterior.
-                        current_dac_val= base_dac_val;  //vuelvo al valor mínimo
-                        set_DAC_value(base_dac_val);
+                        level_A= recovery_level;  //vuelvo al valor mínimo
+                        set_DAC_value(level_A);
                         current_state = STATE_RECU; 
                         recovery_counter = 0;
                         pulse_active = false;
@@ -314,18 +276,18 @@ void flyback_control_task(void *pvParameters) {
         
                 break;
             case STATE_RECU:
-                if (current_dac_val < saved_dac_val){
-                    current_dac_val += DAC_STEP;
-                    set_DAC_value(current_dac_val);
+                if (level_A < saved_level_A){
+                    level_A += 1; //recovery ramp
+                    set_DAC_value(level_A);
                     if (current_ma_global< 3.0f) { 
                         // If contact is lost, go back to standby.
                         ESP_LOGI(TAG, "Contacto perdido durante recuperación");
-                        set_DAC_value(DAC_MIN_VAL);
+                        set_DAC_value(0);
                         current_state = STATE_STANDBY;
                     }
                 }
                 else{
-                    ESP_LOGI(TAG, "Recuperación finalizada, el valor de la DAC es %d", current_dac_val);
+                    ESP_LOGI(TAG, "Recuperación finalizada, el nivel es", level_A);
                     current_state = STATE_FUNC;
 
                 }

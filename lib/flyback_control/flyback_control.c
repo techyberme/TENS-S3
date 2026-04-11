@@ -81,8 +81,9 @@ if (err != ESP_OK) {
     }
 }
 
-void set_DAC_value(uint16_t value) {
-    if (value > 4095) value = 4095;
+void set_DAC_value(int level) {
+    uint16_t value = level * 62; //0-20 level to 0 - 40 mA.;
+    if (value > 1250) value = 1250;
     uint8_t data[2]; 
     //First package, 4 MSB of value and Fast Mode
     data[0] = (value >> 8) & 0x0F; 
@@ -181,9 +182,9 @@ void rcfilter_init(void){
 
 
 void set_pwm_duty_cycle(uint32_t duty_cycle){
-    // if (duty_cycle > 38){   //límite a 1,24
-    //     duty_cycle= 38;
-    // }
+    if (duty_cycle > 38){   //límite a 1,24
+        duty_cycle= 38;
+    }
     esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
     if (ret != ESP_OK) {
         ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);

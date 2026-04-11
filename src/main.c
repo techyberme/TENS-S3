@@ -23,10 +23,11 @@ void app_main(void) {
     display_show_logo();
     vTaskDelay(pdMS_TO_TICKS(3000));
     // 3. Lanzar la interfaz y continuar con el resto del sistema
-    display_start_ui_task();
-    flyback_init();
-    buttons_init();
-    current_monitor_init();
+    // display_start_ui_task();
+    // flyback_init();
+    // buttons_init();
+    // current_monitor_init();
+    hbridge_init(50);
     // Esperamos a que el filtro RC de FB se cargue (p. ej. desde un DAC o PWM)
     // Si el filtro es de 5ms, espera 10ms por seguridad (2 constantes de tiempo).
     vTaskDelay(pdMS_TO_TICKS(10)); 
@@ -36,15 +37,15 @@ void app_main(void) {
     gpio_set_level(FLYBACK_EN_GPIO, 0); // Suelta el pin VC
     uint32_t last_log_time = 0;
     //2. Aquí es donde REALMENTE creas la tarea de control
-    xTaskCreate( 
-        flyback_control_task,   // Función que definiste en current_control.c
-        "ControlTask",          // Nombre para debug
-        4096,                   // Tamaño del stack
-        NULL,                   // pvParameters 
-        10,                     // Prioridad
-        NULL                   // Handle
-    );
-    ESP_LOGI(TAG, "I2C y GPIO inicializados.");
+    // xTaskCreate( 
+    //     flyback_control_task,   // Función que definiste en current_control.c
+    //     "ControlTask",          // Nombre para debug
+    //     4096,                   // Tamaño del stack
+    //     NULL,                   // pvParameters 
+    //     10,                     // Prioridad
+    //     NULL                   // Handle
+    // );
+    // ESP_LOGI(TAG, "I2C y GPIO inicializados.");
 
 
     while (1) {
