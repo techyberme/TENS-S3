@@ -5,10 +5,12 @@
 #include <stdbool.h>
 // Configuración I2C
 #define I2C_MASTER_SCL_IO    8    
-#define I2C_MASTER_SDA_IO    9
+#define I2C_MASTER_SDA_IO   9
+ 
 #define I2C_MASTER_NUM       I2C_NUM_0  
 #define I2C_MASTER_FREQ_HZ   100000 // 400kHz 
-#define MCP4725_ADDR 0x60 
+#define MCP4725_ADDR_A 0x60
+#define MCP4725_ADDR_B 0x61  
 #define FLYBACK_EN_GPIO 21 
 #define RC_FILTER_GPIO  6
 #define V_MARGIN_TARGET 5.0f
@@ -33,7 +35,7 @@ typedef enum {
  */
 void flyback_init(void);
 
-void set_DAC_value(uint16_t value); // 0 a 4095
+void set_DAC_value(uint16_t value, char channel); // 0 a 4095
 
 void flyback_enable(bool enable);
 /**

@@ -4,7 +4,8 @@ typedef enum {
     SCREEN_LOGO,
     SCREEN_CONFIG_TIME,
     SCREEN_CONFIG_PROG,
-    SCREEN_RUNNING
+    SCREEN_RUNNING,
+    SCREEN_DETACHED
 } ui_state_t;
 
 // Pin Definition

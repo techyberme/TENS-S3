@@ -81,7 +81,7 @@ if (err != ESP_OK) {
     }
 }
 
-void set_DAC_value(int level) {
+void set_DAC_value(int level, char channel) {
     uint16_t value = level * 62; //0-20 level to 0 - 40 mA.;
     if (value > 1250) value = 1250;
     uint8_t data[2]; 
@@ -91,20 +91,30 @@ void set_DAC_value(int level) {
     //Second package, 8 LSB of value 
     data[1] = value & 0xFF;   
     //10 ms timeout, in case the bus is blocked
-    esp_err_t err =  i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR, data, 2, pdMS_TO_TICKS(10)); 
-
-
-    // Result verification
-    if (err != ESP_OK) {
-        ESP_LOGE("DAC_I2C", "Writing error: %s (Direction: 0x%02X)", esp_err_to_name(err), MCP4725_ADDR);
+    if (channel == 'A') {
+        esp_err_t  err = i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR_A, data, 2, pdMS_TO_TICKS(10));
+        if (err != ESP_OK) {
+        ESP_LOGE("DAC_CONTROL", "Fallo I2C escribiendo al canal %c. Código: %s", channel, esp_err_to_name(err));
+    } 
+        
     }
+    else if (channel == 'B') {
+        esp_err_t   err = i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR_B, data, 2, pdMS_TO_TICKS(10)); 
+        if (err != ESP_OK) {
+        ESP_LOGE("DAC_CONTROL", "Fallo I2C escribiendo al canal %c. Código: %s", channel, esp_err_to_name(err));
+    }
+    }
+   
+
+    
 }
 void flyback_enable(bool enable) {
     gpio_set_level(FLYBACK_EN_GPIO, !enable); // Encendido del Flyback
 }
 void flyback_stop(system_error_t error) {
     gpio_set_level(FLYBACK_EN_GPIO, 1); // Flyback off
-    set_DAC_value(0); 
+    set_DAC_value(0, 'A'); // DACS off
+    set_DAC_value(0, 'B'); 
     hbridge_stop(); // Parada de emergencia del puente H, lo hago después del flyback para evitar picos de corriente al cortar el puente H antes que el flyback
     switch (error) {
         case ERR_IMPEDANCE_HIGH:

@@ -11,7 +11,7 @@ static ui_state_t current_state = SCREEN_LOGO;
 static const char* TAG = "OLED";
 static u8g2_t u8g2;
 extern uint32_t time_session;
-extern uint32_t duration_session;
+volatile extern uint32_t duration_session;
 extern int program;
 extern int level_A;
 extern int level_B;
@@ -215,7 +215,9 @@ static void draw_main_ui()
                 case SCREEN_RUNNING:
                     draw_main_ui();
                     break;
-                
+                case SCREEN_DETACHED:
+                    //TODO
+                    //draw screen indicating detached electrodes.                
             }
         vTaskDelay(pdMS_TO_TICKS(100)); // Esperar 1 segundo exacto
     }

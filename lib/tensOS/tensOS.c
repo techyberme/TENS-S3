@@ -1,128 +1,83 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
 #include <math.h>
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
-#include "intensity_control.h"
+#include "tensOS.h"
 #include "flyback_control.h"
 #include "hbridge_driver.h"
 #include "oled.h"
 #include "buzzer.h"
 #define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
-system_state_t current_state = STATE_TIME;
-static button_state_t button_state = LOCKED_STATE;
-static uint32_t hold_counter = 0;
-static uint32_t inactivity_counter = 0;
+volatile system_state_t current_state = STATE_TIME;
+system_state_t last_state = STATE_ZERO;
 float max_ma = 50.0f; //valor inicial
-int level_A= 1;
-int level_B= 1;
-int program =1;
+volatile int level_A= 1;
+volatile int level_B= 1;
+volatile int program =1;
 static int saved_level_A = 1; //standby auxiliary value
+static int applied_level_A = 1; //standby auxiliary value
 static int saved_level_B = 1;
+static int applied_level_B = 1; //standby auxiliary value
 static int recovery_level = RECOVER_LEVEL; 
 
 static uint16_t low_current_counter = 0;    
 static uint16_t recovery_counter = 0;   
-static uint32_t last_compen_time = 0;
 static bool UIcalled = false;   //used to call the UI just one
 static bool was_silenced = false; //dac silences
 uint32_t io_num;
 extern volatile float current_ma_global;
 extern volatile bool A_bridge_silence;
-uint32_t time_session= 0;
-uint32_t duration_session= SESSION_DURATION;
+volatile uint32_t time_session= 0;
+volatile uint32_t duration_session= SESSION_DURATION;
 
 system_state_t get_system_state(void) {
     return current_state;
 }
-button_state_t get_button_state(void) {
-    return button_state;
-}
-void buttons_init(void) {
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << UP_GPIO) | (1ULL << DOWN_GPIO) | (1ULL << OK_GPIO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE // Desactivar interrupciones
-    };
-    gpio_config(&io_conf);
-}
-void flyback_control_task(void *pvParameters) {
+
+
+void control_task(void *pvParameters) {
     // 1. Asegurar estado inicial seguro
-    flyback_enable(true); 
-    set_DAC_value(level_A, 'A');
-    bool last_up_state = false;
-    bool last_down_state = false;
-    bool last_ok_state = false;
+    flyback_enable(false); 
+    set_DAC_value(0, 'A');
+    set_DAC_value(0, 'B');
     current_state = STATE_TIME;
     TickType_t xLastWakeTime = xTaskGetTickCount(); //Inicializo, después la tarea se encarga de actualizarla
     const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50 Hz exactos
     
-    ESP_LOGI(TAG, "Iniciando búsqueda de límite: 5mA");
 
     while(1) {         
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
-        bool ok_pressed = (gpio_get_level(OK_GPIO) == 0);
-        bool up_pressed = (gpio_get_level(UP_GPIO) == 0);
-        bool down_pressed = (gpio_get_level(DOWN_GPIO) == 0);
-
-        // Detección de flanco de subida (solo dispara 1 vez por pulsación)
-        bool up_trigger = (up_pressed && !last_up_state);
-        bool down_trigger = (down_pressed && !last_down_state);
-        bool ok_trigger = (ok_pressed && !last_ok_state);
-
-        last_up_state = up_pressed;
-        last_down_state = down_pressed;
-        last_ok_state = ok_pressed;
+        if (current_state != last_state) {
+            ESP_LOGI(TAG, "Transición de estado: %d -> %d", last_state, current_state);
+            
+            // Acciones que se ejecutan UNA SOLA VEZ al entrar a un nuevo estado
+            if (current_state == STATE_TIME) {
+                display_set_state(SCREEN_CONFIG_TIME);
+                time_session = 0;
+            }
+            if (current_state == STATE_PROGRAM) {
+                display_set_state(SCREEN_CONFIG_PROG);
+                program = 1; 
+            }  
+            if (current_state == STATE_FUNC) {
+                display_set_state(SCREEN_RUNNING);
+                program = 1; 
+            }  
+            last_state = current_state; // Actualizar para no repetir
+        }
         switch (current_state) {
             case STATE_TIME:
-                if (!UIcalled){
-                    display_set_state(SCREEN_CONFIG_TIME);
-                    UIcalled = true; 
-                }
-                if (up_trigger) {
-                    duration_session += 1;
-                    if (duration_session > 40) duration_session = 40;     
-                    beep(50);
-                } else if (down_trigger) {
-                    duration_session -= 1;
-                    if (duration_session < 5) duration_session = 5;    
-                    beep(50);
-                } else if (ok_trigger) {
-                    current_state = STATE_PROGRAM;
-                    UIcalled = false;
-                    beep(50);
-                }
                 break;
             case STATE_PROGRAM:
-                if (!UIcalled){
-                        display_set_state(SCREEN_CONFIG_PROG);
-                        UIcalled = true; 
-                    }
-                if (up_trigger) {
-                    program += 1;
-                    if (program > 5) program = 5;     
-                    beep(50);
-                } else if (down_trigger) {
-                    program -= 1;
-                    if (program < 1) program = 1;    
-                    beep(50);
-                } else if (ok_trigger) {
-                    current_state = STATE_FUNC;
-                    UIcalled = false;
-                    beep(50);
-                }
-                ESP_LOGI(TAG, "Programa: %d", program);
                 break;
 
             // Dentro de flyback_control_task...
             case STATE_FUNC:
                 // Acumulación y Comprobación del tiempo
                 time_session += xFrequency;  //solo acumlo en estate_func
-                // if (time_session>= SESSION_TICKS) {
                 if (time_session>= pdMS_TO_TICKS(duration_session * 60000)) {
                         ESP_LOGI(TAG, "Sesión terminada. Finalizando...");
                         current_state = STATE_DONE; 
@@ -137,6 +92,15 @@ void flyback_control_task(void *pvParameters) {
 
                 }
                 else{
+                    //update DAC if needed
+                    if (applied_level_A != level_A) {
+                    set_DAC_value(level_A, 'A');
+                    applied_level_A = level_A;
+                    }
+                    if (applied_level_B != level_B) {
+                        set_DAC_value(level_B, 'B');
+                        applied_level_B = level_B;
+                    }
                     if (was_silenced){
                     set_DAC_value(level_A, 'A'); //back to previous value.
                     was_silenced= false;
@@ -154,84 +118,6 @@ void flyback_control_task(void *pvParameters) {
                         low_current_counter = 0;
                     }
             }
-                switch (button_state) {
-                    case LOCKED_STATE:
-                        if (ok_pressed) {
-                            button_state = UNLOCKING_STATE;
-                            hold_counter = 0;
-                        }
-                        break;
-
-                    case UNLOCKING_STATE:
-                        if (ok_pressed) {
-                            hold_counter++;
-                            if (hold_counter >= UNLOCK_HOLD_TICKS) {
-                                button_state = UNLOCKED_STATE_A;
-                                inactivity_counter = 0;
-                                beep(200);
-                                ESP_LOGI(TAG, "Level A unlocked");
-                            }
-                        }
-                        else button_state = LOCKED_STATE;  
-                            break;
-                    case UNLOCKED_STATE_A:
-                        inactivity_counter++;
-                        if (up_trigger) {
-                            level_A++;
-                            if (level_A > 20) level_A = 20; 
-                            set_DAC_value(level_A, 'A');
-                            inactivity_counter = 0;    
-                            beep(50);
-                        } else if (down_trigger) {
-                            level_A--;
-                            if (level_A < 0) level_A = 0; 
-                            set_DAC_value(level_A, 'A');
-                            inactivity_counter = 0;   
-                            beep(50);
-                        } else if (ok_trigger) {
-                            button_state = UNLOCKED_STATE_B;
-                            inactivity_counter = 0;
-                            beep(100);
-                            ESP_LOGI(TAG, "Level B unlocked");
-                        }
-                        if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
-                            button_state = LOCKED_STATE;
-                            inactivity_counter = 0;
-                            beep(200);
-                            ESP_LOGI(TAG, "Buttons locked due to inactivity");
-                        }
-                        break;
-                    case UNLOCKED_STATE_B:
-                        inactivity_counter++;
-                        if (up_trigger) {
-                            level_B++;
-                            if (level_B > 20) level_B = 20;   
-                            set_DAC_value(level_B, 'B'); 
-                            inactivity_counter = 0;  
-                            beep(50);
-                        } else if (down_trigger) {
-                            level_B--;
-                            if (level_B < 0) level_B = 0;
-                            set_DAC_value(level_B, 'B'); 
-                            inactivity_counter = 0;    
-                            beep(50);
-                        } else if (ok_trigger) {
-                            button_state = UNLOCKED_STATE_A;
-                            inactivity_counter = 0;
-                            beep(100);
-                            ESP_LOGI(TAG, "Level A unlocked");
-                        }
-                        if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
-                            button_state = LOCKED_STATE;
-                            inactivity_counter = 0;
-                            beep(200);
-                            ESP_LOGI(TAG, "Buttons locked due to inactivity");
-                        }
-                        break;
-                    default:
-                        break;
-
-                    }
                 break;
             case STATE_STANDBY:
             /*
