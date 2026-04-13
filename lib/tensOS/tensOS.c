@@ -9,6 +9,7 @@
 #include "hbridge_driver.h"
 #include "oled.h"
 #include "buzzer.h"
+#include "settings.h"
 #define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
 volatile system_state_t current_state = STATE_TIME;
@@ -25,7 +26,6 @@ static int recovery_level = RECOVER_LEVEL;
 
 static uint16_t low_current_counter = 0;    
 static uint16_t recovery_counter = 0;   
-static bool UIcalled = false;   //used to call the UI just one
 static bool was_silenced = false; //dac silences
 uint32_t io_num;
 extern volatile float current_ma_global;
@@ -36,9 +36,18 @@ volatile uint32_t duration_session= SESSION_DURATION;
 system_state_t get_system_state(void) {
     return current_state;
 }
+void watchdog_init(void) {
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << WDI_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf);
+    gpio_set_level(WDI_GPIO, 0); 
+}
 
-
-void control_task(void *pvParameters) {
+void os_control_task(void *pvParameters) {
     // 1. Asegurar estado inicial seguro
     flyback_enable(false); 
     set_DAC_value(0, 'A');
@@ -46,10 +55,20 @@ void control_task(void *pvParameters) {
     current_state = STATE_TIME;
     TickType_t xLastWakeTime = xTaskGetTickCount(); //Inicializo, después la tarea se encarga de actualizarla
     const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50 Hz exactos
-    
+    //Watchdog variables
+    uint8_t wdi_cycle_counter = 0;
+    uint8_t wdi_current_state = 0;
 
     while(1) {         
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
+        //Watchdog
+        wdi_cycle_counter++;
+        if (wdi_cycle_counter >= 25) { //Every 500 ms
+            wdi_current_state = !wdi_current_state; // Invert state
+            gpio_set_level(WDI_GPIO, wdi_current_state);
+            wdi_cycle_counter = 0;
+        }
+        //Load screen only when state changes.
         if (current_state != last_state) {
             ESP_LOGI(TAG, "Transición de estado: %d -> %d", last_state, current_state);
             
@@ -70,6 +89,14 @@ void control_task(void *pvParameters) {
         }
         switch (current_state) {
             case STATE_TIME:
+                doctor_data_t doctor_data = read_doctor();
+                if (doctor_data.doctor) {
+                    duration_session = doctor_data.duration;
+                    program = doctor_data.program;
+                    current_state = STATE_FUNC;
+                    beep(50);
+                }
+
                 break;
             case STATE_PROGRAM:
                 break;

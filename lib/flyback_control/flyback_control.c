@@ -81,7 +81,7 @@ if (err != ESP_OK) {
     }
 }
 
-void set_DAC_value(int level, char channel) {
+void set_DAC_value(uint16_t level, char channel) {
     uint16_t value = level * 62; //0-20 level to 0 - 40 mA.;
     if (value > 1250) value = 1250;
     uint8_t data[2]; 

@@ -4,7 +4,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "buzzer.h"
-#include "intensity_control.h" 
+#include "tensOS.h" 
+#include "settings.h"
 
 static const char *TAG = "BUTTONS";
 
@@ -95,7 +96,40 @@ void button_ui_task(void *pvParameters) {
                             hold_counter = 0;
                         }
                         break;
+                        if (down_pressed) {
+                            lock_state = DOCTOR_STATE;
+                            hold_counter = 0;
+                        }
+                        break;
 
+                    case DOCTOR_STATE:
+                        if (down_pressed) {
+                            hold_counter++;
+                            if (hold_counter >= 250) { // 5 seconds hold
+                                beep(400);
+                                //check if doctor mode is already set.
+                                doctor_data_t doctor_data = read_doctor();
+                                if (!doctor_data.doctor) {
+                                    doctor_data_t doctor_set = {
+                                    .doctor = true,
+                                    .program = program,
+                                    .duration = duration_session
+                                    };
+                                    write_doctor(doctor_set.doctor, doctor_set.program, doctor_set.duration);
+                                    ESP_LOGI(TAG, "Doctor mode set");
+                                    lock_state = LOCKED_STATE;
+                                }
+                                //if doctor is set, go back to regular mode. Go back to time configuration.
+                                else{
+                                    write_doctor(false, 0, 0); //reset doctor mode
+                                    ESP_LOGI(TAG, "Doctor mode reset");
+                                    lock_state = STATE_TIME;
+                                }
+                                
+                            }
+                        }
+                        else lock_state = LOCKED_STATE;  
+                            break;
                     case UNLOCKING_STATE:
                         if (ok_pressed) {
                             hold_counter++;

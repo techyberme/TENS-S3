@@ -4,9 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define UP_GPIO  10
-#define DOWN_GPIO 11
-#define OK_GPIO 12
+#define WDI_GPIO 15
 #define SESSION_DURATION         5    
 #define SESSION_TICKS         (pdMS_TO_TICKS(SESSION_DURATION *60*1000))   
 #define RECOVER_LEVEL 3  
@@ -32,4 +30,5 @@ void os_control_task(void *pvParameters);
  */
 system_state_t get_system_state(void);
 
+void watchdog_init(void);
 #endif  
