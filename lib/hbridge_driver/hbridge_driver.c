@@ -143,12 +143,12 @@ void hbridge_init(uint32_t deadtime_ticks)
     
 }
 void hbridge_stop(char channel){
-    if (channel = 'A'){
+    if (channel == 'A'){
         mcpwm_generator_set_force_level(generators[0], 0, true);
         mcpwm_generator_set_force_level(generators[1], 0, true);
         en_A = false;
         }
-    if (channel = 'B'){
+    if (channel == 'B'){
         mcpwm_generator_set_force_level(generators[2], 0, true);
         mcpwm_generator_set_force_level(generators[3], 0, true);
         en_B = false;
@@ -157,12 +157,12 @@ void hbridge_stop(char channel){
 }
 void hbridge_start(char channel){   
     //enable A and forcing is turned off
-    if (channel = 'A'){
+    if (channel == 'A'){
         en_A = true;
         mcpwm_generator_set_force_level(generators[0], -1, true);
         mcpwm_generator_set_force_level(generators[1], -1, true);
         }
-    if (channel = 'B'){
+    if (channel == 'B'){
         en_B = true;
         mcpwm_generator_set_force_level(generators[2], -1, true);
         mcpwm_generator_set_force_level(generators[3], -1, true);

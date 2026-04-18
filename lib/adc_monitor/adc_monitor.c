@@ -144,34 +144,33 @@ void current_monitor_init(void) {
 }
 
 void voltage_monitor_init() {
-    // 1. Configuración de la unidad ADC1
+    // 1. Configuración de la unidad ADC2
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_2,
         .ulp_mode = ADC_ULP_MODE_DISABLE,
     };
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &volt_adc_handle));
 
-    // 2. Configuración del canal para el BCM56DS (Colector)
     adc_oneshot_chan_cfg_t config = {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
         .atten = ADC_ATTEN_DB_12, // Rango hasta ~3.1V para cubrir tus 80V escalados
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL, &config)); //GPIO 4 en S3
-
-    // 3. Calibración 
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL_A, &config)); 
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL_B, &config)); 
+    // Calib
     voltage_monitor_calibrate_init();
     
 }
 
 void voltage_monitor_calibrate_init(void) {
-    ESP_LOGI(TAG, "Configurando esquema de calibración...");
+    ESP_LOGI(TAG, "Configuring calibration...");
     adc_cali_curve_fitting_config_t cali_config = {
         .unit_id = ADC_UNIT_2,
         .atten = ADC_ATTEN_DB_12,           
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
 
-    // Esto lee los eFuses internos del S3 y crea la curva matemática
+    // Efuse reading
     esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &volt_cali_handle);
     
     if (ret != ESP_OK) {
@@ -179,13 +178,20 @@ void voltage_monitor_calibrate_init(void) {
     }
 }
 
-float get_voltage() {
+float get_voltage(char channel) {
+    adc_channel_t chan;
+    if (channel == 'A'){
+       chan = ADC_VOL_A;
+    }
+    if (channel == 'B'){
+       chan = ADC_VOL_B;
+    }
     int raw_val;
     int voltage_mv;
     float sum = 0;
     const int num_samples = 16;
     for (int i = 0; i < num_samples; i++) {
-        ESP_ERROR_CHECK(adc_oneshot_read(volt_adc_handle, ADC_VOL, &raw_val));
+        ESP_ERROR_CHECK(adc_oneshot_read(volt_adc_handle, chan, &raw_val));
         if (volt_cali_handle) {
             adc_cali_raw_to_voltage(volt_cali_handle, raw_val, &voltage_mv);
             sum += voltage_mv;

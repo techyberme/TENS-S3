@@ -117,7 +117,8 @@ void flyback_stop(system_error_t error) {
     gpio_set_level(FLYBACK_EN_GPIO, 1); // Flyback off
     set_DAC_value(0, 'A'); // DACS off
     set_DAC_value(0, 'B'); 
-    hbridge_stop(); // Parada de emergencia del puente H, lo hago después del flyback para evitar picos de corriente al cortar el puente H antes que el flyback
+    hbridge_stop('A'); // Parada de emergencia del puente H, lo hago después del flyback para evitar picos de corriente al cortar el puente H antes que el flyback
+    hbridge_stop('B');
     switch (error) {
         case ERR_IMPEDANCE_HIGH:
             led_strip_set_pixel(led_strip, 0, 212, 99, 28); // Naranja 
@@ -206,12 +207,15 @@ void set_pwm_duty_cycle(uint32_t duty_cycle){
 
 void update_voltage(void){
     static uint32_t current_duty= 38;
-    float v_collector = get_voltage();
-    //si sobra mucho voltaje
-    if (v_collector > (V_MARGIN_TARGET +V_MARGIN_BAND)){
-        if (current_duty < 38) current_duty +=1;   //cambio de alrededor de un voltio
+    float volt_A = get_voltage('A');
+    float volt_B = get_voltage('B');
+    //Take voltage with less margin
+    float volt = (volt_A < volt_B) ? volt_A : volt_B;
+    //
+    if (volt> (V_MARGIN_TARGET + V_MARGIN_BAND)){
+        if (current_duty < 38) current_duty +=1;   //1 volt change
     }
-    else if (v_collector > (V_MARGIN_TARGET - V_MARGIN_BAND)){
+    else if (volt > (V_MARGIN_TARGET - V_MARGIN_BAND)){
         if (current_duty>1) current_duty -=1; 
     }
     set_pwm_duty_cycle(current_duty);

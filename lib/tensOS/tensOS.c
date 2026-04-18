@@ -169,10 +169,11 @@ void os_control_task(void *pvParameters) {
                     was_silenced= false;
                     }
                     // if it's not a dead time, and current is low, we start counting 
-                    if (current_ma_global < 3.0f) {  //TODO: Cambiarlo a 3.0
+                    if (current_ma_global < 3.0f) {  //TODO: Cambiar a voltaje (0?)
                         low_current_counter++;
                         if (low_current_counter > 5) { // 100ms de seguridad
                             set_DAC_value(0, 'A'); //DAC down for safety
+                            hbridge_stop('A');
                             flyback_enable(false);
                             EN_PWR = false;
                             ESP_LOGW(TAG, "Electrodos desconectados");
