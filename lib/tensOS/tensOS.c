@@ -145,21 +145,31 @@ void os_control_task(void *pvParameters) {
 
                 }
                 else{
-                    //update DAC if needed
-                    if (applied_level_A != level_A) {
-                    set_DAC_value(level_A, 'A');
-                    applied_level_A = level_A;
+                    
+                    //if the difference is too big,  
+                    if (abs(level_A - level_B) > 10 && (level_A != 0 && level_B != 0)){
+                        //TODO: Qué pasa si A 15, B 5 y quiere bajar B
+                        level_A = applied_level_A;
+                        level_B = applied_level_B;
                     }
-                    if (applied_level_B != level_B) {
-                        set_DAC_value(level_B, 'B');
-                        applied_level_B = level_B;
+                    else{
+                        //update DAC if needed
+                        if (applied_level_A != level_A) {
+                            set_DAC_value(level_A, 'A');
+                            applied_level_A = level_A;
+                        }
+                        if (applied_level_B != level_B) {
+                            set_DAC_value(level_B, 'B');
+                            applied_level_B = level_B;
+                        }
                     }
+                    
                     if (was_silenced){
                     set_DAC_value(level_A, 'A'); //back to previous value.
                     was_silenced= false;
                     }
                     // if it's not a dead time, and current is low, we start counting 
-                    if (current_ma_global < 0.0f) {  //TODO: Cambiarlo a 3.0
+                    if (current_ma_global < 3.0f) {  //TODO: Cambiarlo a 3.0
                         low_current_counter++;
                         if (low_current_counter > 5) { // 100ms de seguridad
                             set_DAC_value(0, 'A'); //DAC down for safety
