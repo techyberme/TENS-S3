@@ -115,8 +115,20 @@ void os_control_task(void *pvParameters) {
                     EN_PWR = true;
                 }
                             // Ahora es seguro encender
-                ESP_LOGI("INIT", "Filtro FB estabilizado. Encendiendo Flyback.");
-            
+                ESP_LOGI("INIT", "Encendiendo Flyback y Puente en H");
+                //If either's level is zero, it's Hbridge stops
+                if (level_A == 0){
+                    hbridge_stop('A');
+                }
+                else if (applied_level_A = 0 && level_A > 0){
+                    hbridge_start('A');
+                }
+                if (level_B == 0){
+                    hbridge_stop('B');
+                }
+                else if (applied_level_B = 0 && level_B > 0){
+                    hbridge_start('B');
+                }
             
                 time_session += xFrequency;  //solo acumlo en estate_func
                 if (time_session>= pdMS_TO_TICKS(duration_session * 60000)) {
