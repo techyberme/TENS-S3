@@ -84,12 +84,12 @@ doctor_data_t read_doctor(void){
     out.doctor = (doctor_u8 != 0);
     if (err != ESP_OK)  ESP_LOGE(TAG, "Error reading values!");
 
-    int read_duration = 0;
+    int32_t read_duration = 0;
     err = nvs_get_i32(h, "duration", &read_duration);
     out.duration = read_duration;
     if (err != ESP_OK)  ESP_LOGE(TAG, "Error reading values!");
 
-    int read_program = 0;
+    int32_t read_program = 0;
     err = nvs_get_i32(h, "program", &read_program);
     out.program = read_program;
     if (err != ESP_OK)  ESP_LOGE(TAG, "Error reading values!");

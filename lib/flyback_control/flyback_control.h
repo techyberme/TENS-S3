@@ -13,8 +13,8 @@
 #define MCP4725_ADDR_B 0x61  
 #define FLYBACK_EN_GPIO 21 
 #define RC_FILTER_GPIO  6
-#define V_MARGIN_TARGET 5.0f
-#define V_MARGIN_BAND 1.0f                  
+#define V_MARGIN_TARGET 2.0f
+#define V_MARGIN_BAND 0.2f                  
 #define LED_STRIP_GPIO_PIN  48
 #define LED_STRIP_LED_COUNT 1
 //10MHz for the RMT
@@ -53,7 +53,7 @@ void set_pwm_duty_cycle(uint32_t duty_cycle);
 /**
  * @brief Coverter's voltage control
  */
-void voltage_control(void);
+void update_voltage(void);
 
 
 

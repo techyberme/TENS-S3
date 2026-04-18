@@ -12,6 +12,8 @@ static mcpwm_cmpr_handle_t comparators[2];
 static mcpwm_gen_handle_t generators[4];
 static mcpwm_timer_handle_t timer = NULL;  //Time base
 static tens_mode_t current_mode = TENS_MODE_CONTINUO;
+static bool en_A = false;
+static bool en_B = false;
 volatile bool A_bridge_silence = false; //volatile to be constantly read.
 volatile bool B_bridge_silence = false; 
 
@@ -19,24 +21,31 @@ volatile bool B_bridge_silence = false;
 static void burst_callback(void* arg) {
     static bool output_en = true;
     // If burst, commute
-    if (current_mode == TENS_MODE_BURST) {
-        if (output_en) {
+    if (output_en) {
+        if (en_A) {
             mcpwm_generator_set_force_level(generators[0], -1, true);  //-1 turns off the force level.
             mcpwm_generator_set_force_level(generators[1], -1, true);
+        }
+        if (en_B){
             mcpwm_generator_set_force_level(generators[2], 0, true);  
             mcpwm_generator_set_force_level(generators[3], 0, true);
-            A_bridge_silence=false;
-            B_bridge_silence=true;
-        } else {
-            mcpwm_generator_set_force_level(generators[0], 0, true);
-            mcpwm_generator_set_force_level(generators[1], 0, true);
-            mcpwm_generator_set_force_level(generators[2], -1, true);
-            mcpwm_generator_set_force_level(generators[3], -1, true);
-            A_bridge_silence=true;
-            B_bridge_silence=false;
         }
-        output_en = !output_en;
-    } 
+        A_bridge_silence=false;
+        B_bridge_silence=true;
+    } else {
+        if (en_A) {
+            mcpwm_generator_set_force_level(generators[0], 0, true); 
+            mcpwm_generator_set_force_level(generators[1], 0, true);
+        }
+        if (en_B){
+            mcpwm_generator_set_force_level(generators[2], -1, true);  
+            mcpwm_generator_set_force_level(generators[3], -1, true);
+        }
+        A_bridge_silence=true;
+        B_bridge_silence=false;
+    }
+    output_en = !output_en;
+
 }
 void hbridge_init(uint32_t deadtime_ticks)
 {
@@ -79,6 +88,7 @@ void hbridge_init(uint32_t deadtime_ticks)
         //gens 0 and 1, operator 0 and 2 and 3, operator 1
         int oper_idx = i/2;
         ESP_ERROR_CHECK(mcpwm_new_generator(operators[oper_idx], &gen_config, &generators[i]));
+        mcpwm_generator_set_force_level(generators[i], 0, true); //generators start stopped
     }
     
     // ====== Generator Action  ====== //
@@ -113,27 +123,50 @@ void hbridge_init(uint32_t deadtime_ticks)
     
     // --- 100 Hz BURST ---
     //Pointer to interruption
-    const esp_timer_create_args_t periodic_timer_args = {
-        .callback = &burst_callback,
-        .name = "tens_burst"
-    };
-    esp_timer_handle_t burst_timer;
-    //Timer creation
-    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &burst_timer));
-    
+    if (current_mode == TENS_MODE_BURST) {
+        const esp_timer_create_args_t periodic_timer_args = {
+            .callback = &burst_callback,
+            .name = "tens_burst"
+        };
+        esp_timer_handle_t burst_timer;
+        //Timer creation
+        ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &burst_timer));
+        ESP_ERROR_CHECK(esp_timer_start_periodic(burst_timer, 5000));
+    }
     // 100 Hz -> T = 5000us
-    ESP_ERROR_CHECK(esp_timer_start_periodic(burst_timer, 5000));
+    
 
     ESP_LOGI(TAG, "Enable and start timer");
     ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
+
+    
 }
-void hbridge_stop(void){
-    mcpwm_generator_set_force_level(generators[0], 0, true);
-    mcpwm_generator_set_force_level(generators[1], 0, true);
-    mcpwm_generator_set_force_level(generators[2], 0, true);
-    mcpwm_generator_set_force_level(generators[3], 0, true);
-    mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY);
+void hbridge_stop(char channel){
+    if (channel = 'A'){
+        mcpwm_generator_set_force_level(generators[0], 0, true);
+        mcpwm_generator_set_force_level(generators[1], 0, true);
+        en_A = false;
+        }
+    if (channel = 'B'){
+        mcpwm_generator_set_force_level(generators[2], 0, true);
+        mcpwm_generator_set_force_level(generators[3], 0, true);
+        en_B = false;
+        }
+    //mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY);
+}
+void hbridge_start(char channel){   
+    //enable A and forcing is turned off
+    if (channel = 'A'){
+        en_A = true;
+        mcpwm_generator_set_force_level(generators[0], -1, true);
+        mcpwm_generator_set_force_level(generators[1], -1, true);
+        }
+    if (channel = 'B'){
+        en_B = true;
+        mcpwm_generator_set_force_level(generators[2], -1, true);
+        mcpwm_generator_set_force_level(generators[3], -1, true);
+        }
 }
 
 

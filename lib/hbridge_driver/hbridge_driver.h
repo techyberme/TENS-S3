@@ -19,9 +19,12 @@ typedef enum {
 
 void hbridge_init(uint32_t deadtime_ticks);
 
-void hbridge_stop(void);
+void hbridge_stop(char channel);
+
+void hbridge_start(char channel);
 
 void hbridge_set_mode(tens_mode_t mode);
+
 
 
 #endif

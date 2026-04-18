@@ -10,7 +10,7 @@ typedef enum {
     DOCTOR_STATE,
     UNLOCKED_STATE_A,
     UNLOCKED_STATE_B
-} button_lock_state_t;
+} button_state_t;
 
 #define UP_GPIO  10
 #define DOWN_GPIO 11
@@ -27,6 +27,6 @@ void buttons_init(void);
 
 void buttons_task(void *pvParameters);
 
-button_lock_state_t get_button_state(void);
+button_state_t get_button_state(void);
 
 #endif // BUTTON_UI_H

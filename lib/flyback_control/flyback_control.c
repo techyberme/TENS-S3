@@ -110,7 +110,9 @@ void set_DAC_value(uint16_t level, char channel) {
 }
 void flyback_enable(bool enable) {
     gpio_set_level(FLYBACK_EN_GPIO, !enable); // Encendido del Flyback
+    //TODO controlled converter turn on
 }
+
 void flyback_stop(system_error_t error) {
     gpio_set_level(FLYBACK_EN_GPIO, 1); // Flyback off
     set_DAC_value(0, 'A'); // DACS off
@@ -202,21 +204,17 @@ void set_pwm_duty_cycle(uint32_t duty_cycle){
   }  
 
 
-void voltage_control(void){
+void update_voltage(void){
     static uint32_t current_duty= 38;
-    while(1){
-        float v_collector = get_voltage();
-        //si sobra mucho voltaje
-        if (v_collector > (V_MARGIN_TARGET +V_MARGIN_BAND)){
-            if (current_duty < 38) current_duty +=1; 
-        }
-        else if (v_collector > (V_MARGIN_TARGET - V_MARGIN_BAND)){
-            if (current_duty>1) current_duty -=1; 
-        }
-        set_pwm_duty_cycle(current_duty);
-        vTaskDelay(pdMS_TO_TICKS(100)); // Frecuencia de control: 10 Hz
+    float v_collector = get_voltage();
+    //si sobra mucho voltaje
+    if (v_collector > (V_MARGIN_TARGET +V_MARGIN_BAND)){
+        if (current_duty < 38) current_duty +=1;   //cambio de alrededor de un voltio
     }
-
+    else if (v_collector > (V_MARGIN_TARGET - V_MARGIN_BAND)){
+        if (current_duty>1) current_duty -=1; 
+    }
+    set_pwm_duty_cycle(current_duty);
   }
 
 

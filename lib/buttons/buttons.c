@@ -17,15 +17,15 @@ extern volatile uint32_t duration_session;
 extern volatile system_state_t current_state; 
 
 
-static button_lock_state_t lock_state = LOCKED_STATE;
+static button_state_t lock_state = UNLOCKED_STATE_A;
 static uint32_t hold_counter = 0;
 static uint32_t inactivity_counter = 0;
 
-button_lock_state_t get_button_state(void) {
+button_state_t get_button_state(void) {
     return lock_state;
 }
 
-void buttons_hw_init(void) {
+void buttons_init(void) {
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << UP_GPIO) | (1ULL << DOWN_GPIO) | (1ULL << OK_GPIO),
         .mode = GPIO_MODE_INPUT,
@@ -35,7 +35,7 @@ void buttons_hw_init(void) {
     gpio_config(&io_conf);
 }
 
-void button_ui_task(void *pvParameters) {
+void buttons_task(void *pvParameters) {
     bool last_up_state = false;
     bool last_down_state = false;
     bool last_ok_state = false;

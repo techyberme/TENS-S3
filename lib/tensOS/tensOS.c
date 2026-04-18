@@ -15,14 +15,16 @@ static const char *TAG = "CONTROL_LOGIC";
 volatile system_state_t current_state = STATE_TIME;
 system_state_t last_state = STATE_ZERO;
 float max_ma = 50.0f; //valor inicial
-volatile int level_A= 1;
-volatile int level_B= 1;
+volatile int level_A= 0;
+volatile int level_B= 0;
 volatile int program =1;
-static int saved_level_A = 1; //standby auxiliary value
-static int applied_level_A = 1; //standby auxiliary value
+static int saved_level_A = 0; //standby auxiliary value
+static int applied_level_A = 0; //standby auxiliary value
 static int saved_level_B = 1;
 static int applied_level_B = 1; //standby auxiliary value
 static int recovery_level = RECOVER_LEVEL; 
+//Enable flyback
+static bool EN_PWR = false;
 
 static uint16_t low_current_counter = 0;    
 static uint16_t recovery_counter = 0;   
@@ -104,6 +106,18 @@ void os_control_task(void *pvParameters) {
             // Dentro de flyback_control_task...
             case STATE_FUNC:
                 // Acumulación y Comprobación del tiempo
+                //Stay until the user set a level different from zero.
+                while (level_A == 0 && level_B == 0) {
+                    vTaskDelay(xFrequency); //Espero un ciclo antes de volver a comprobar
+                }
+                if (!EN_PWR){
+                    flyback_enable(true);
+                    EN_PWR = true;
+                }
+                            // Ahora es seguro encender
+                ESP_LOGI("INIT", "Filtro FB estabilizado. Encendiendo Flyback.");
+            
+            
                 time_session += xFrequency;  //solo acumlo en estate_func
                 if (time_session>= pdMS_TO_TICKS(duration_session * 60000)) {
                         ESP_LOGI(TAG, "Sesión terminada. Finalizando...");
@@ -133,10 +147,12 @@ void os_control_task(void *pvParameters) {
                     was_silenced= false;
                     }
                     // if it's not a dead time, and current is low, we start counting 
-                    if (current_ma_global < 3.0f) {  //Tengo que pensar en el límite
+                    if (current_ma_global < 0.0f) {  //TODO: Cambiarlo a 3.0
                         low_current_counter++;
                         if (low_current_counter > 5) { // 100ms de seguridad
                             set_DAC_value(0, 'A'); //DAC down for safety
+                            flyback_enable(false);
+                            EN_PWR = false;
                             ESP_LOGW(TAG, "Electrodos desconectados");
                             saved_level_A= level_A;
                             current_state = STATE_STANDBY;

@@ -63,10 +63,17 @@ void monitor_task(void *pvParameters) {
                 // Ajuste de mediciones a la curva de calibracións
                 int max_volt = 0;
                 int avg_volt=0;
-                adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt);
-                adc_cali_raw_to_voltage(cali_handle, avg_raw, &avg_volt);
-                float max_current = (float)(max_volt-100) / 15.0f; // Rsense = 15 ohm
-                float avg_current = (float)(avg_volt-100) / 15.0f; 
+                if (cali_handle != NULL) {
+                    adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt);
+                    adc_cali_raw_to_voltage(cali_handle, avg_raw, &avg_volt);
+                } else {
+                    // Si no hay calibración, forzamos un apagado de seguridad.
+                    // No podemos garantizar la corriente inyectada al paciente.
+                    ESP_LOGE(TAG, "ADC sin calibrar. Abortando salida.");
+                    continue; // Saltar el resto del procesamiento
+                }
+                float max_current = (float)(max_volt) / 25.0f; // Rsense = 25 ohm
+                float avg_current = (float)(avg_volt) / 25.0f; 
                 current_ma_global = avg_current;
                 // SEGURIDAD CRÍTICA
                 if (max_current > 50.0f) { // Ejemplo: Límite 50mA
