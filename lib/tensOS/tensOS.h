@@ -17,6 +17,7 @@ typedef enum {
     STATE_STANDBY,          // Disconnected Electrodes
     STATE_RECU,
     STATE_DONE,
+    STATE_LOW_BATTERY,
     STATE_ERROR          
 } system_state_t;
 

@@ -16,8 +16,8 @@ typedef enum {
 
 void display_init(void);
 void display_show_logo(void);
-void display_low_battery(void);
 void display_start_ui_task(void);
 void display_set_state(ui_state_t new_state);
+void display_low_battery_warning(void);
 
 #endif

@@ -284,3 +284,26 @@ void display_start_ui_task(void) {
     xTaskCreate(display_task, "display_task", 4096, NULL, 5, NULL);
 }
 
+void display_low_battery_warning() {
+    u8g2_ClearBuffer(&u8g2);
+
+    // 1. Dibujar el icono de advertencia (Warning Sign)
+    // Usamos Open Iconic. El glifo 67 es el triángulo de advertencia.
+    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_DrawGlyph(&u8g2, 48, 35, 67); 
+
+    // 2. Configurar texto "BATERÍA"
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); // Fuente compacta para el título
+    const char* str1 = "BATERIA";
+    int width1 = u8g2_GetStrWidth(&u8g2, str1);
+    u8g2_DrawStr(&u8g2, (128 - width1) / 2, 50, str1);
+
+    // 3. Configurar texto "BAJA" en negrita/grande
+    u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
+    const char* str2 = "BAJA";
+    int width2 = u8g2_GetStrWidth(&u8g2, str2);
+    u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
+
+    u8g2_SendBuffer(&u8g2);
+}
+

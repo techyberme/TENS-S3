@@ -11,6 +11,18 @@
 #include "flyback_control.h"
 
 
+static const float battery_curve[9][2] = {
+    {8400, 100.0},
+    {8300, 95.0},
+    {8220, 90.0},
+    {8040, 80.0},
+    {7680, 50.0},
+    {7600, 40.0},
+    {7460, 20.0},
+    {7380, 10.0},
+    {6400, 0.0}   
+};
+
 volatile float current_ma_global = 0.0f; //volátil para que lo lea siempre
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
@@ -157,6 +169,7 @@ void voltage_monitor_init() {
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL_A, &config)); 
     ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL_B, &config)); 
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_BAT, &config)); 
     // Calib
     voltage_monitor_calibrate_init();
     
@@ -201,7 +214,41 @@ float get_voltage(char channel) {
     float avg_mv = sum / num_samples;
     
     // V_real = V_adc * (R_high + R_low) / R_low
-    float factor = (500.0f + 33.0f) / 33.0f;
+    float factor = (450.0f + 50.0f) / 50.0f;
     
     return (avg_mv / 1000.0f) * factor; 
+}
+
+uint8_t get_battery(void) {
+    int raw_val;
+    int voltage_mv;
+    float sum = 0;
+    const int num_samples = 32; //a bit more robust
+    for (int i = 0; i < num_samples; i++) {
+        ESP_ERROR_CHECK(adc_oneshot_read(volt_adc_handle, ADC_BAT, &raw_val));
+        if (volt_cali_handle) {
+            adc_cali_raw_to_voltage(volt_cali_handle, raw_val, &voltage_mv);
+            sum += voltage_mv;
+        }
+    }
+    //conversion to battery voltage
+    float v_bat = sum / num_samples * 5;
+    
+
+    // 2. Límites absolutos (Saturación)
+    if (v_bat >= battery_curve[0][0]) return 100;
+    if (v_bat <= battery_curve[8][0]) return 0;
+
+    // Interpolation
+    for (int i = 0; i < 8; i++) {
+        float v_high = battery_curve[i][0];
+        float p_high = battery_curve[i][1];
+        float v_low  = battery_curve[i+1][0];
+        float p_low  = battery_curve[i+1][1];
+        if (v_bat <= v_high && v_bat >= v_low) {
+            float percentage = p_low + (v_bat - v_low) * (p_high - p_low) / (v_high - v_low);
+            return (uint8_t)percentage;
+        }
+    }
+    return 0; 
 }

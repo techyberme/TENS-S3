@@ -5,6 +5,7 @@
 #include "driver/i2c.h"
 #include "esp_log.h"
 #include "tensOS.h"
+#include "adc_monitor.h"
 #include "flyback_control.h"
 #include "hbridge_driver.h"
 #include "oled.h"
@@ -70,14 +71,16 @@ void os_control_task(void *pvParameters) {
             gpio_set_level(WDI_GPIO, wdi_current_state);
             wdi_cycle_counter = 0;
         }
-        //Load screen only when state changes.
+        //Actions carried on just once the state changes
         if (current_state != last_state) {
             ESP_LOGI(TAG, "Transición de estado: %d -> %d", last_state, current_state);
             
-            // Acciones que se ejecutan UNA SOLA VEZ al entrar a un nuevo estado
             if (current_state == STATE_TIME) {
                 display_set_state(SCREEN_CONFIG_TIME);
                 time_session = 0;
+                //get battery voltae
+                uint8_t percentage =  get_battery();
+                if (percentage < 20) current_state = STATE_LOW_BATTERY;
             }
             if (current_state == STATE_PROGRAM) {
                 display_set_state(SCREEN_CONFIG_PROG);
@@ -85,7 +88,9 @@ void os_control_task(void *pvParameters) {
             }  
             if (current_state == STATE_FUNC) {
                 display_set_state(SCREEN_RUNNING);
-                program = 1; 
+            }  
+            if (current_state == STATE_LOW_BATTERY) {
+                display_set_state(SCREEN_BATTERY);
             }  
             last_state = current_state; // Actualizar para no repetir
         }
@@ -169,7 +174,7 @@ void os_control_task(void *pvParameters) {
                     was_silenced= false;
                     }
                     // if it's not a dead time, and current is low, we start counting 
-                    if (current_ma_global < 3.0f) {  //TODO: Cambiar a voltaje (0?)
+                    if (current_ma_global < 3.0f) {  //TODO
                         low_current_counter++;
                         if (low_current_counter > 5) { // 100ms de seguridad
                             set_DAC_value(0, 'A'); //DAC down for safety
@@ -249,6 +254,9 @@ void os_control_task(void *pvParameters) {
                 buzzer_alarm();
                 flyback_stop(WARN_DONE);
                 ESP_LOGI(TAG, "Programa completado");
+                vTaskSuspend(NULL); // Bloquea la tarea por seguridad
+                break;
+            case STATE_LOW_BATTERY:
                 vTaskSuspend(NULL); // Bloquea la tarea por seguridad
                 break;
             case STATE_ERROR:
