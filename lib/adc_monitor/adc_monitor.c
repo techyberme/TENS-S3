@@ -51,50 +51,46 @@ void monitor_task(void *pvParameters) {
     while (1) {
         // Bloqueo eficiente CPU, (…, tiempo de espera eterno)
         if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)){
-
-            // Lectura Buffer que ha llegado
+            if (cali_handle == NULL) {
+                    ESP_LOGE(TAG, "No calibratoin.");
+                    continue; // Evita el crash
+                }
+            // Buffer reading
             esp_err_t ret = adc_continuous_read(handle, result, 256, &ret_num, 0);
             
             if (ret == ESP_OK) {
-                //lectura de corriente pico
                 uint32_t max_raw = 0;
-                //lectura de corriente media
-                uint32_t sum_raw = 0;
-
-                // Iteramos sobre las muestras recibidas (cada una ocupa 4 bytes en S3)
-                for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
-                    adc_digi_output_data_t *p = (void*)&result[i]; //si no va, poner (void*)&result[i]
-                    uint32_t val = p->type2.data;           //me quedo solo con los 12 bits de la medida
-                    //pico de corriente
-                    if (val > max_raw) max_raw = val; 
-                    sum_raw += val;
-
-                }
-                //corriente media
-                uint32_t avg_raw = sum_raw*4/ret_num;
-                // Ajuste de mediciones a la curva de calibracións
+                int sum_volt = 0; 
+                int current_volt = 0;
                 int max_volt = 0;
-                int avg_volt=0;
-                if (cali_handle != NULL) {
-                    adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt);
-                    adc_cali_raw_to_voltage(cali_handle, avg_raw, &avg_volt);
-                } else {
-                    // Si no hay calibración, forzamos un apagado de seguridad.
-                    // No podemos garantizar la corriente inyectada al paciente.
-                    ESP_LOGE(TAG, "ADC sin calibrar. Abortando salida.");
-                    continue; // Saltar el resto del procesamiento
+                int num_meas = ret_num / SOC_ADC_DIGI_RESULT_BYTES;
+                for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
+                    adc_digi_output_data_t *p = (void*)&result[i];
+                    uint32_t val = p->type2.data; 
+                        //peak current detection
+                        if (val > max_raw) {
+                        max_raw = val; 
+                    }
+
+                    // Calibration of each measurement
+                    adc_cali_raw_to_voltage(cali_handle, val, &current_volt);
+                    sum_volt += current_volt;
                 }
+                //avg reading
+                int avg_volt = sum_volt / num_meas;
+                //calibration max reading
+                adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt); 
+
                 float max_current = (float)(max_volt) / 25.0f; // Rsense = 25 ohm
-                float avg_current = (float)(avg_volt) / 25.0f; 
+                float avg_current = (float)(avg_volt) / 25.0f;
                 current_ma_global = avg_current;
                 // SEGURIDAD CRÍTICA
                 if (max_current > 50.0f) { // Ejemplo: Límite 50mA
                     flyback_stop(ERR_OVERCURRENT);
                 }
                                 
+            }
         }
-        }
-        //vTaskDelay(1);
     }
 }
 void current_monitor_calibrate_init(void) {
@@ -193,6 +189,10 @@ void voltage_monitor_calibrate_init(void) {
 
 float get_voltage(char channel) {
     adc_channel_t chan;
+    if (volt_cali_handle == NULL) {
+        ESP_LOGE(TAG, "Error: No calibration available");
+        return -1.0f; 
+    }
     if (channel == 'A'){
        chan = ADC_VOL_A;
     }
@@ -252,3 +252,4 @@ uint8_t get_battery(void) {
     }
     return 0; 
 }
+

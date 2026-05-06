@@ -7,8 +7,8 @@
 #include "esp_log.h"
 #include "driver/i2c.h"
 #include "driver/gpio.h"
-#include "hbridge_driver.h"
 #include "adc_monitor.h"
+#include "buzzer.h"
 #define CURRENT_UP_GPIO  10
 #define CURRENT_DOWN_GPIO 11
 #define COMP_MS 100 //compensación cada 100 ms.
@@ -17,9 +17,7 @@ static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time_up = 0;
 static uint32_t last_intr_time_down = 0;
-static float volt_A;
-int level = 0;
-
+static uint16_t rc_val = 0;
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     uint32_t current_time = xTaskGetTickCountFromISR();
     uint32_t gpio_num = (uint32_t) arg;
@@ -56,11 +54,9 @@ void app_main(void) {
     // 1. Inicialización de periféricos
     buttons_init();
     rcfilter_init();
-    hbridge_init(200);
-    hbridge_start('A');
-    flyback_init();
-    voltage_monitor_init();
     current_monitor_init();
+    buzzer_init();
+    
     uint32_t last_log_time = 0;
     ESP_LOGI(TAG, "I2C y GPIO inicializados.");
 
@@ -70,24 +66,24 @@ void app_main(void) {
         
         if (xQueueReceive(gpio_evt_queue, &io_num, 0)) {
             if (io_num == CURRENT_UP_GPIO) {
-                    if (level < 20) {
-                                level+= 1;
+                    if (rc_val < 37) {
+                                rc_val+= 1;
                             }
                             else{
-                                level=20;
+                                rc_val=38;
                             }
                         
-                        set_DAC_value(level, 'A');
+                        set_pwm_duty_cycle(rc_val);
 
                 }
             else if (io_num == CURRENT_DOWN_GPIO) {
-                            if (level > 0) {
-                                level-= 1;
+                            if (rc_val > 1) {
+                                rc_val-= 1;
                             }
                             else{
-                                level=0;
+                                rc_val=0;
                             }
-                            set_DAC_value(level,'A');
+                            set_pwm_duty_cycle(rc_val);
             }
         }
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -97,13 +93,11 @@ void app_main(void) {
         // 3. Logueo controlado (Cada 1000ms)
         
         if (now - last_log_time > 1000) {
-                uint16_t dac_now, dac_eeprom;
-        bool ready;
-
-
-
-            volt_A = get_voltage('A');
-            ESP_LOGI(TAG, "Level: %d, voltage: %f.  | corriente: %f.", level,volt_A, current_ma_global);
+            float vout = rc_val * 3.3 /100; 
+            // Imprimimos la lectura del ADC que la otra tarea está actualizando
+            ESP_LOGI(TAG, "Duty cycle: %d | Vout: %f | Measurement: %.2f V", 
+                      rc_val, vout, current_ma_global);
+            beep(200);
             last_log_time = now;
         }
         vTaskDelay(pdMS_TO_TICKS(20));

@@ -8,7 +8,6 @@
 #include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "hbridge_driver.h"
-#include "adc_monitor.h"
 #define CURRENT_UP_GPIO  10
 #define CURRENT_DOWN_GPIO 11
 #define COMP_MS 100 //compensación cada 100 ms.
@@ -17,7 +16,6 @@ static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time_up = 0;
 static uint32_t last_intr_time_down = 0;
-static float volt_A;
 int level = 0;
 
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
@@ -56,11 +54,8 @@ void app_main(void) {
     // 1. Inicialización de periféricos
     buttons_init();
     rcfilter_init();
-    hbridge_init(200);
-    hbridge_start('A');
+    hbridge_init(50);
     flyback_init();
-    voltage_monitor_init();
-    current_monitor_init();
     uint32_t last_log_time = 0;
     ESP_LOGI(TAG, "I2C y GPIO inicializados.");
 
@@ -97,13 +92,7 @@ void app_main(void) {
         // 3. Logueo controlado (Cada 1000ms)
         
         if (now - last_log_time > 1000) {
-                uint16_t dac_now, dac_eeprom;
-        bool ready;
-
-
-
-            volt_A = get_voltage('A');
-            ESP_LOGI(TAG, "Level: %d, voltage: %f.  | corriente: %f.", level,volt_A, current_ma_global);
+            ESP_LOGI(TAG, "Level: %d", level);
             last_log_time = now;
         }
         vTaskDelay(pdMS_TO_TICKS(20));

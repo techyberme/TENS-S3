@@ -1,7 +1,7 @@
 #ifndef ADC_MONITOR_H
 #define ADC_MONITOR_H
 
-#define ADC_ATTEN_CURRENT    ADC_ATTEN_DB_6
+#define ADC_ATTEN_CURRENT    ADC_ATTEN_DB_0 //Change to 6
 #define ADC_ATTEN_VOL    ADC_ATTEN_DB_6
 
 #define ADC_VOL_A     ADC_CHANNEL_4  //pin 15 en S3, utilizo el ADC2 porque este trabaja en oneshot y el ADC1 en continuo,
@@ -33,4 +33,5 @@ float get_voltage(char channel);
  * @return Returns battery percentage
  */
 uint8_t get_battery(void);
+
 #endif

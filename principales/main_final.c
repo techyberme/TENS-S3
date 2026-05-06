@@ -20,6 +20,7 @@ void app_main(void) {
     // Si el filtro es de 5ms, espera 10ms por seguridad (2 constantes de tiempo).
     vTaskDelay(pdMS_TO_TICKS(10)); 
     display_init();
+    buzzer_init();
     init_nvs();
     uint32_t last_log_time = 0;
     xTaskCreate( 

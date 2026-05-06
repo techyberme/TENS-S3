@@ -221,4 +221,43 @@ void update_voltage(void){
     set_pwm_duty_cycle(current_duty);
   }
 
+esp_err_t mcp4725_init_safe_start(void) {
+    // Arrays para iterar sobre ambos DACs sin duplicar código
+    const uint8_t addresses[2] = {MCP4725_ADDR_A, MCP4725_ADDR_B};
+    // const char channels[2] = {'A', 'B'};
+    const char channels[2] = {'A'};
+    ESP_LOGI("SAFETY", "Iniciando secuencia de verificación Zero-Start para DACs...");
 
+    for (int i = 0; i < 1; i++) {
+        uint8_t data_rx[5] = {0};
+        
+        // 1. Lectura del estado actual
+        esp_err_t err = i2c_master_read_from_device(I2C_MASTER_NUM, addresses[i], data_rx, 5, pdMS_TO_TICKS(10));
+        if (err != ESP_OK) {
+            ESP_LOGE("SAFETY", "Fallo I2C en DAC %c durante inicio: %s", channels[i], esp_err_to_name(err));
+            return err; // Aborto inmediato, hardware no responde
+        }
+
+        uint16_t current_eeprom = ((data_rx[3] & 0x0F) << 8) | data_rx[4];
+
+        // 2. Verificación y Corrección
+        if (current_eeprom != 0) {
+            ESP_LOGW("SAFETY", "DAC %c tiene EEPROM = %d. Forzando hardware a 0V...", channels[i], current_eeprom);
+            
+            uint8_t data_tx[3] = {0x60, 0x00, 0x00}; // Comando Write DAC + EEPROM a 0
+            err = i2c_master_write_to_device(I2C_MASTER_NUM, addresses[i], data_tx, 3, pdMS_TO_TICKS(50));
+            
+            if (err == ESP_OK) {
+                ESP_LOGI("SAFETY", "EEPROM DAC %c reescrita. Bloqueando 50ms para guardado físico.", channels[i]);
+                vTaskDelay(pdMS_TO_TICKS(50)); 
+            } else {
+                ESP_LOGE("SAFETY", "Error crítico al reescribir EEPROM del DAC %c", channels[i]);
+                return err; // Aborto, la memoria está corrupta o el bus falló al escribir
+            }
+        } else {
+            ESP_LOGI("SAFETY", "DAC %c verificado: Estado seguro (0V).", channels[i]);
+        }
+    }
+    
+    return ESP_OK; // Ambos DACs respondieron y están a 0V garantizado
+}

@@ -19,6 +19,7 @@ void app_main(void) {
     flyback_init();
     buttons_init();
     current_monitor_init();
+    
     // Esperamos a que el filtro RC de FB se cargue (p. ej. desde un DAC o PWM)
     // Si el filtro es de 5ms, espera 10ms por seguridad (2 constantes de tiempo).
     vTaskDelay(pdMS_TO_TICKS(10)); 

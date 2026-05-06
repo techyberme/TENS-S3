@@ -91,7 +91,7 @@ void hbridge_init(uint32_t deadtime_ticks)
         mcpwm_generator_set_force_level(generators[i], 0, true); //generators start stopped
     }
     
-    // ====== Generator Action  ====== //
+    // Generator action
     for (int i=0; i<2; i++){
     ESP_LOGI(TAG, "Set generator action on timer and compare event");
     int gen_idx = i * 2;

@@ -51,10 +51,10 @@ void rcfilter_init(void);
 void set_pwm_duty_cycle(uint32_t duty_cycle);
 
 /**
- * @brief Coverter's voltage control
+ * @brief Converter's voltage control
  */
 void update_voltage(void);
 
 
-
+esp_err_t mcp4725_init_safe_start(void);
 #endif
