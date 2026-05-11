@@ -103,7 +103,7 @@ sequenceDiagram
 
     %% --- Retry resumes ---
     Timer-->>App: timeout()
-    App->>SIP: newCall(...)
+    App->>SIP: newCall(void)
 
     ```
  
