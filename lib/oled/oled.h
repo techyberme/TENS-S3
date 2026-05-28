@@ -10,8 +10,8 @@ typedef enum {
 } ui_state_t;
 
 // Pin Definition
-#define OLED_SDA_PIN 16
-#define OLED_SCL_PIN 17
+#define OLED_SDA_PIN 19
+#define OLED_SCL_PIN 18
 
 
 void display_init(void);

@@ -33,10 +33,8 @@ static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
 static adc_continuous_handle_t handle = NULL;
 static TaskHandle_t s_monitor_task_handle = NULL; // Handle de la tarea que procesará los datos
-// Nuevos handles para la lectura de voltaje
-static adc_oneshot_unit_handle_t volt_adc_handle;
-static adc_cali_handle_t volt_cali_handle = NULL;
-
+ 
+ 
 // Se dispara el callback cuando se llena el frame
 static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, 
                                        const adc_continuous_evt_data_t *edata, 
@@ -96,7 +94,7 @@ void monitor_task(void *pvParameters) {
                         if (count_bat >= 32) {
                             uint32_t avg_bat_raw = sum_bat_raw / 32;
                             int volt_mv;
-                            adc_cali_raw_to_voltage(volt_cali_handle, avg_bat_raw, &volt_mv);
+                            adc_cali_raw_to_voltage(cali_handle, avg_bat_raw, &volt_mv);
                             
                             // Transformar milivoltios a % usando tu tabla e interpolación
                             batt_percentage = calc_percentage(volt_mv);
@@ -237,7 +235,7 @@ void process_voltage(uint32_t raw_val, char channel) {
                 float avg_mv = (float)sum_v_a / 32.0f;
                 // conversion
                 volt_A = (avg_mv / 1000.0f) * div_factor;
-                
+                const float div_factor = (91.0f + 10.0f) / 10.0f;
                 // Reset
                 sum_v_a = 0;
                 count_v_a = 0;
@@ -263,9 +261,10 @@ void process_voltage(uint32_t raw_val, char channel) {
 }
 
 float calc_percentage(int volt){
-     
-    if (volt >= battery_curve[0][0]) return 100.0;
-    if (volt <= battery_curve[8][0]) return 0.;
+    const float div_factor = (75.0f + 15.0f) / 15.0f;
+    float updated_volt = (volt) * div_factor;
+    if (updated_volt >= battery_curve[0][0]) return 100.0;
+    if (updated_volt <= battery_curve[8][0]) return 0.;
 
     // Interpolation
     for (int i = 0; i < 8; i++) {
@@ -273,11 +272,12 @@ float calc_percentage(int volt){
         float p_high = battery_curve[i][1];
         float v_low  = battery_curve[i+1][0];
         float p_low  = battery_curve[i+1][1];
-        if (volt <= v_high && volt >= v_low) {
-            float percentage = p_low + (volt - v_low) * (p_high - p_low) / (v_high - v_low);
+        if (updated_volt <= v_high && updated_volt >= v_low) {
+            float percentage = p_low + (updated_volt - v_low) * (p_high - p_low) / (v_high - v_low);
             return percentage;
         }
     }
+    return 0.;
 }
 
 void remove_battery_from_pattern(void) {
