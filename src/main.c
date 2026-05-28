@@ -12,12 +12,12 @@
 #define CURRENT_UP_GPIO  10
 #define CURRENT_DOWN_GPIO 11
 #define COMP_MS 100 //compensación cada 100 ms.
-extern volatile float current_ma_global;
+extern volatile float current_A;
 static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time_up = 0;
 static uint32_t last_intr_time_down = 0;
-extern volatile float current_ma_global;
+extern volatile float current_A;
 static float volt_A;
 int level = 0;
 
@@ -99,7 +99,7 @@ void app_main(void) {
         
         if (now - last_log_time > 1000) {
             volt_A = get_voltage('A');
-            ESP_LOGI(TAG, "Level: %d, voltage: %f.  | corriente: %f.", level,volt_A, current_ma_global);
+            ESP_LOGI(TAG, "Level: %d, voltage: %f.  | corriente: %f.", level,volt_A, current_A);
             last_log_time = now;
         }
         vTaskDelay(pdMS_TO_TICKS(20));

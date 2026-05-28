@@ -9,7 +9,7 @@
 #include "esp_log.h"
 #include "driver/i2c.h"
 
-extern volatile float current_ma_global;
+extern volatile float current_A;
 static const char *TAG = "TENS_MAIN";
 
 
@@ -44,7 +44,7 @@ void app_main(void) {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         if (now - last_log_time > 1000) {
             // Imprimimos la lectura del ADC que la otra tarea está actualizando
-            ESP_LOGI(TAG, "Corriente Medida: %.1f mA", current_ma_global);
+            ESP_LOGI(TAG, "Corriente Medida: %.1f mA", current_A);
             last_log_time = now;
         }
          vTaskDelay(pdMS_TO_TICKS(20));

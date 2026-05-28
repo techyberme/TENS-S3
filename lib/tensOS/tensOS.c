@@ -31,7 +31,7 @@ static uint16_t low_current_counter = 0;
 static uint16_t recovery_counter = 0;   
 static bool was_silenced = false; //dac silences
 uint32_t io_num;
-extern volatile float current_ma_global;
+extern volatile float current_A;
 extern volatile bool A_bridge_silence;
 volatile uint32_t time_session= 0;
 volatile uint32_t duration_session= SESSION_DURATION;
@@ -174,7 +174,7 @@ void os_control_task(void *pvParameters) {
                     was_silenced= false;
                     }
                     // if it's not a dead time, and current is low, we start counting 
-                    if (current_ma_global < 3.0f) {  //TODO
+                    if (current_A < 3.0f) {  //TODO
                         low_current_counter++;
                         if (low_current_counter > 5) { // 100ms de seguridad
                             set_DAC_value(0, 'A'); //DAC down for safety
@@ -212,7 +212,7 @@ void os_control_task(void *pvParameters) {
                     }
                 } else {
                     // 20 ms after the pulse starts, check the current
-                    if (current_ma_global >= 3.0f) {
+                    if (current_A >= 3.0f) {
                         recovery_counter++;
                     } else {
                         recovery_counter = 0;
@@ -236,7 +236,7 @@ void os_control_task(void *pvParameters) {
                 if (level_A < saved_level_A){
                     level_A += 1; //recovery ramp
                     set_DAC_value(level_A, 'A');
-                    if (current_ma_global< 3.0f) { 
+                    if (current_A< 3.0f) { 
                         // If contact is lost, go back to standby.
                         ESP_LOGI(TAG, "Contacto perdido durante recuperación");
                         set_DAC_value(0, 'A');

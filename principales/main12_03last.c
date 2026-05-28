@@ -14,7 +14,7 @@
 #define CURRENT_DOWN_GPIO 11
 #define COMP_MS 100 //compensación cada 100 ms.
 static uint32_t last_compen_time = 0;
-extern volatile float current_ma_global;
+extern volatile float current_A;
 static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time = 0;
@@ -74,7 +74,7 @@ void app_main(void) {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         if (now - last_compen_time >= COMP_MS ) {
                     last_compen_time = now;
-                    float error = current_wanted - current_ma_global;
+                    float error = current_wanted - current_A;
                     //si el error es muy grande, DAC_STEP más agresivo, si es pequeño, DAC_STEP normal.
                     if (fabs(error) > 2.0f) { 
                         if (error > 0) {
@@ -119,7 +119,7 @@ void app_main(void) {
         if (now - last_log_time > 1000) {
             // Imprimimos la lectura del ADC que la otra tarea está actualizando
             ESP_LOGI(TAG, "DAC: %d | Real (ADC): %.1f mA, Objetivo: %.1f mA", 
-                    dac_val, current_ma_global, current_wanted);
+                    dac_val, current_A, current_wanted);
             last_log_time = now;
         }
         vTaskDelay(pdMS_TO_TICKS(20));

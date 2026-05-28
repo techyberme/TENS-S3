@@ -23,7 +23,12 @@ static const float battery_curve[9][2] = {
     {6400, 0.0}   
 };
 
-volatile float current_ma_global = 0.0f; //volátil para que lo lea siempre
+volatile float current_A = 0.0f; //volátil para que lo lea siempre
+volatile float current_B = 0.0f; //volátil para que lo lea siempre
+volatile float volt_A = 0.0f;
+volatile float volt_B = 0.0f;
+volatile float batt_percentage = 0;
+volatile bool battery_flag = true;
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
 static adc_continuous_handle_t handle = NULL;
@@ -46,75 +51,77 @@ static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle,
 
 void monitor_task(void *pvParameters) {
     uint8_t result[256]; // Coincide con conv_frame_size
-    uint32_t ret_num = 0;  //la función de lectura lo rellena con la longitud del buffer
-
+    //length of buffer
+    uint32_t ret_num = 0;  
+    //local batt variable
+    uint32_t sum_bat_raw = 0;
+    uint32_t count_bat = 0;
     while (1) {
         // Bloqueo eficiente CPU, (…, tiempo de espera eterno)
         if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)){
             if (cali_handle == NULL) {
-                    ESP_LOGE(TAG, "No calibratoin.");
+                    ESP_LOGE(TAG, "No calibration.");
                     continue; // Evita el crash
                 }
             // Buffer reading
             esp_err_t ret = adc_continuous_read(handle, result, 256, &ret_num, 0);
             
             if (ret == ESP_OK) {
-                uint32_t max_raw = 0;
-                int sum_volt = 0; 
-                int current_volt = 0;
-                int max_volt = 0;
-                int num_meas = ret_num / SOC_ADC_DIGI_RESULT_BYTES;
-                for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
-                    adc_digi_output_data_t *p = (void*)&result[i];
+               for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
+                //take data and metadata
+                    adc_digi_output_data_t *p = (adc_digi_output_data_t *)&result[i];
+                    uint32_t chan = p->type2.channel;
                     uint32_t val = p->type2.data; 
-                        //peak current detection
-                        if (val > max_raw) {
-                        max_raw = val; 
+
+                    // Current processing
+                    if (chan == ADC_CURR_A) {
+                        process_current(val, 'A'); 
+                    } 
+                    else if (chan == ADC_CURR_B) {
+                        process_current(val, 'B');
                     }
-
-                    // Calibration of each measurement
-                    adc_cali_raw_to_voltage(cali_handle, val, &current_volt);
-                    sum_volt += current_volt;
-                }
-                //avg reading
-                int avg_volt = sum_volt / num_meas;
-                //calibration max reading
-                adc_cali_raw_to_voltage(cali_handle, max_raw, &max_volt); 
-
-                float max_current = (float)(max_volt) / 25.0f; // Rsense = 25 ohm
-                float avg_current = (float)(avg_volt) / 25.0f;
-                current_ma_global = avg_current;
-                // SEGURIDAD CRÍTICA
-                if (max_current > 50.0f) { // Ejemplo: Límite 50mA
-                    flyback_stop(ERR_OVERCURRENT);
-                }
-                                
+                    //Voltage processing
+                    else if (chan == ADC_VOL_A) {
+                        process_voltage(val, 'A');
+                    }
+                    else if (chan == ADC_VOL_B) {
+                        process_voltage(val, 'B');
+                    }
+                    // Battery voltage processing
+                    else if (chan == ADC_BAT && battery_flag) {
+                        sum_bat_raw += val;
+                        count_bat++;
+                        
+                        // 32 batches
+                        if (count_bat >= 32) {
+                            uint32_t avg_bat_raw = sum_bat_raw / 32;
+                            int volt_mv;
+                            adc_cali_raw_to_voltage(volt_cali_handle, avg_bat_raw, &volt_mv);
+                            
+                            // Transformar milivoltios a % usando tu tabla e interpolación
+                            batt_percentage = calc_percentage(volt_mv);
+                            
+                            // for now, stop measuring the battery
+                            battery_flag= false; 
+                            remove_battery_from_pattern();
+                            // reset vars
+                            sum_bat_raw = 0;
+                            count_bat = 0;
+                        }
+                    }
+               }
             }
         }
     }
 }
-void current_monitor_calibrate_init(void) {
-    ESP_LOGI(TAG, "Configurando esquema de calibración...");
-    adc_cali_curve_fitting_config_t cali_config = {
-        .unit_id = ADC_UNIT_1,
-        .atten = ADC_ATTEN_CURRENT,           
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
 
-    // Esto lee los eFuses internos del S3 y crea la curva matemática
-    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle);
-    
-    if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "Error al crear esquema de calibración. ¿eFuses no grabados?");
-    }
-}
 // Tarea ADC
 
 
-void current_monitor_init(void) {
+void adc_monitor_init(void) {
     ESP_LOGI(TAG, "Configurando ADC...");
     //Inicialización calibración
-    current_monitor_calibrate_init();
+    adc_calibrate_init();
     
     // Configuración del Driver Continuo
     adc_continuous_handle_cfg_t adc_config = {
@@ -125,19 +132,24 @@ void current_monitor_init(void) {
 
     // Configuración del Hardware (Canal y Velocidad)
     adc_continuous_config_t config = {
-        .sample_freq_hz = 20 * 1000, // 20kHz (5 veces la freq del puente en H)
-        .conv_mode = ADC_CONV_SINGLE_UNIT_1,  //ADC 1
+        .sample_freq_hz = 70000, // 70 kHz, 10 kHz for each loop
+        .conv_mode = ADC_CONV_SINGLE_UNIT_2,  //ADC 2
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2, // Formato Tipo 2 para el S3
     };
 
-    adc_digi_pattern_config_t adc_pattern = {
-        .atten = ADC_ATTEN_CURRENT,
-        .channel = ADC_CHANNEL_2, // GPIO 3 en S3
-        .unit = ADC_UNIT_1,
-        .bit_width = ADC_BITWIDTH_12,
+    adc_digi_pattern_config_t adc_pattern[7] = {
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_A, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_B, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_A, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_B, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_VOL, .channel = ADC_VOL_A,  .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_VOL, .channel = ADC_VOL_B,  .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_VOL, .channel = ADC_BAT,    .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT }
     };
 
-    config.pattern_num = 1;    //solo un canal ADC
+ 
+
+    config.pattern_num = 7;    //solo un canal ADC
     config.adc_pattern = &adc_pattern;
 
     ESP_ERROR_CHECK(adc_continuous_config(handle, &config));
@@ -151,93 +163,109 @@ void current_monitor_init(void) {
     ESP_ERROR_CHECK(adc_continuous_start(handle));
 }
 
-void voltage_monitor_init() {
-    // 1. Configuración de la unidad ADC2
-    adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_2,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &volt_adc_handle));
-
-    adc_oneshot_chan_cfg_t config = {
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .atten = ADC_ATTEN_DB_12, // Rango hasta ~3.1V para cubrir tus 80V escalados
-    };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL_A, &config)); 
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_VOL_B, &config)); 
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(volt_adc_handle, ADC_BAT, &config)); 
-    // Calib
-    voltage_monitor_calibrate_init();
-    
-}
-
-void voltage_monitor_calibrate_init(void) {
+ 
+void adc_calibrate_init(void) {
     ESP_LOGI(TAG, "Configuring calibration...");
     adc_cali_curve_fitting_config_t cali_config = {
         .unit_id = ADC_UNIT_2,
-        .atten = ADC_ATTEN_DB_12,           
+        .atten = ADC_ATTEN_DB_6,           
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
 
     // Efuse reading
-    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &volt_cali_handle);
+    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle);
     
     if (ret != ESP_OK) {
         ESP_LOGI(TAG, "Error al crear esquema de calibración. ¿eFuses no grabados?");
     }
 }
 
-float get_voltage(char channel) {
-    adc_channel_t chan;
-    if (volt_cali_handle == NULL) {
-        ESP_LOGE(TAG, "Error: No calibration available");
-        return -1.0f; 
+void process_current(uint32_t raw_val, char channel) {
+    int volt_mv = 0;
+    
+    //Convert value
+    if (cali_handle != NULL) {
+        adc_cali_raw_to_voltage(cali_handle, raw_val, &volt_mv);
+    } else {
+        return; 
     }
-    if (channel == 'A'){
-       chan = ADC_VOL_A;
-    }
-    if (channel == 'B'){
-       chan = ADC_VOL_B;
-    }
-    int raw_val;
-    int voltage_mv;
-    float sum = 0;
-    const int num_samples = 32;
-    for (int i = 0; i < num_samples; i++) {
-        ESP_ERROR_CHECK(adc_oneshot_read(volt_adc_handle, chan, &raw_val));
-        if (volt_cali_handle) {
-            adc_cali_raw_to_voltage(volt_cali_handle, raw_val, &voltage_mv);
-            sum += voltage_mv;
+
+
+    float current_ma = (float)volt_mv / 24.9f;
+
+    // 3. Lógica de control y seguridad por canal
+    if (channel == 'A') {
+        current_A = current_ma; 
+        
+        // Overcurrent
+        if (current_ma > 50.0f) { 
+            flyback_stop(ERR_OVERCURRENT);
+            ESP_LOGE("ADC_CURR", "¡Overcurrent in Channel A! %.2f mA. Shutdown Flyback.", current_ma);
+        }
+    } 
+    else if (channel == 'B') {
+        current_B = current_ma; 
+        
+         if (current_ma > 50.0f) { 
+            flyback_stop(ERR_OVERCURRENT);
+            ESP_LOGE("ADC_CURR", "¡Overcurrent in Channel B! %.2f mA. Shutdown Flyback.", current_ma);
         }
     }
-    
-    float avg_mv = sum / num_samples;
-    
-    // V_real = V_adc * (R_high + R_low) / R_low
-    float factor = (75.0f + 20.0f) / 10.0f;
-    
-    return (avg_mv / 1000.0f) * factor; 
 }
 
-uint8_t get_battery(void) {
-    int raw_val;
-    int voltage_mv;
-    float sum = 0;
-    const int num_samples = 32; //a bit more robust
-    for (int i = 0; i < num_samples; i++) {
-        ESP_ERROR_CHECK(adc_oneshot_read(volt_adc_handle, ADC_BAT, &raw_val));
-        if (volt_cali_handle) {
-            adc_cali_raw_to_voltage(volt_cali_handle, raw_val, &voltage_mv);
-            sum += voltage_mv;
-        }
-    }
-    //conversion to battery voltage
-    float v_bat = sum / num_samples * 5;
+void process_voltage(uint32_t raw_val, char channel) {
+    int volt_mv = 0;
     
+    if (cali_handle != NULL) {
+        adc_cali_raw_to_voltage(cali_handle, raw_val, &volt_mv);
+    } else {
+        return;
+    }
 
-    // 2. Límites absolutos (Saturación)
-    if (v_bat >= battery_curve[0][0]) return 100;
-    if (v_bat <= battery_curve[8][0]) return 0;
+     static uint32_t sum_v_a = 0, count_v_a = 0;
+    static uint32_t sum_v_b = 0, count_v_b = 0;
+
+    // Division factor
+    const float div_factor = (91.0f + 10.0f) / 10.0f;
+
+    switch (channel) {
+        case 'A':
+            sum_v_a += volt_mv;
+            count_v_a++;
+            //take 32 samples
+            if (count_v_a >= 32) {
+                float avg_mv = (float)sum_v_a / 32.0f;
+                // conversion
+                volt_A = (avg_mv / 1000.0f) * div_factor;
+                
+                // Reset
+                sum_v_a = 0;
+                count_v_a = 0;
+            }
+            break;
+
+        case 'B':
+            sum_v_b += volt_mv;
+            count_v_b++;
+            
+            if (count_v_b >= 32) {
+                float avg_mv = (float)sum_v_b / 32.0f;
+                volt_B = (avg_mv / 1000.0f) * div_factor;
+                
+                sum_v_b = 0;
+                count_v_b = 0;
+            }
+            break;
+            
+        default:
+            break;
+    }
+}
+
+float calc_percentage(int volt){
+     
+    if (volt >= battery_curve[0][0]) return 100.0;
+    if (volt <= battery_curve[8][0]) return 0.;
 
     // Interpolation
     for (int i = 0; i < 8; i++) {
@@ -245,11 +273,42 @@ uint8_t get_battery(void) {
         float p_high = battery_curve[i][1];
         float v_low  = battery_curve[i+1][0];
         float p_low  = battery_curve[i+1][1];
-        if (v_bat <= v_high && v_bat >= v_low) {
-            float percentage = p_low + (v_bat - v_low) * (p_high - p_low) / (v_high - v_low);
-            return (uint8_t)percentage;
+        if (volt <= v_high && volt >= v_low) {
+            float percentage = p_low + (volt - v_low) * (p_high - p_low) / (v_high - v_low);
+            return percentage;
         }
     }
-    return 0; 
 }
 
+void remove_battery_from_pattern(void) {
+    // Stop ADC
+    ESP_ERROR_CHECK(adc_continuous_stop(handle));
+
+    // New optimized pattern
+    adc_continuous_config_t new_config = {
+        .sample_freq_hz = 60000, // Down to 60 kHz
+        .conv_mode = ADC_CONV_SINGLE_UNIT_2,
+        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
+    };
+
+    adc_digi_pattern_config_t clean_pattern[6] = {
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_A, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_B, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_A, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_B, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_VOL, .channel = ADC_VOL_A,  .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+        { .atten = ADC_ATTEN_VOL, .channel = ADC_VOL_B,  .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
+     };
+
+
+    new_config.pattern_num = 6;
+    new_config.adc_pattern = clean_pattern;
+
+    // Reconfig DMA
+    ESP_ERROR_CHECK(adc_continuous_config(handle, &new_config));
+
+    // Start ADC
+    ESP_ERROR_CHECK(adc_continuous_start(handle));
+    
+    ESP_LOGI(TAG, "ADC reconfigured");
+}

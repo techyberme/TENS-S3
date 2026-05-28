@@ -12,7 +12,7 @@
 #define CURRENT_UP_GPIO  10
 #define CURRENT_DOWN_GPIO 11
 #define COMP_MS 100 //compensación cada 100 ms.
-extern volatile float current_ma_global;
+extern volatile float current_A;
 static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time_up = 0;
@@ -96,7 +96,7 @@ void app_main(void) {
             float vout = rc_val * 3.3 /100; 
             // Imprimimos la lectura del ADC que la otra tarea está actualizando
             ESP_LOGI(TAG, "Duty cycle: %d | Vout: %f | Measurement: %.2f V", 
-                      rc_val, vout, current_ma_global);
+                      rc_val, vout, current_A);
             beep(200);
             last_log_time = now;
         }
