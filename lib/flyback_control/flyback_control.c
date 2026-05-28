@@ -82,8 +82,8 @@ if (err != ESP_OK) {
 }
 
 void set_DAC_value(uint16_t level, char channel) {
-    uint16_t value = level * 62; //0-20 level to 0 - 40 mA.;
-    if (value > 1250) value = 1250;
+    uint16_t value = level * 60; //0-20 level to 0 - 40 mA., used to be 60;
+    if (value > 1250) value = 1250;  //1250
     uint8_t data[2]; 
     //First package, 4 MSB of value and Fast Mode
     data[0] = (value >> 8) & 0x0F; 

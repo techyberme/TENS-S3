@@ -202,7 +202,7 @@ float get_voltage(char channel) {
     int raw_val;
     int voltage_mv;
     float sum = 0;
-    const int num_samples = 16;
+    const int num_samples = 32;
     for (int i = 0; i < num_samples; i++) {
         ESP_ERROR_CHECK(adc_oneshot_read(volt_adc_handle, chan, &raw_val));
         if (volt_cali_handle) {
@@ -214,7 +214,7 @@ float get_voltage(char channel) {
     float avg_mv = sum / num_samples;
     
     // V_real = V_adc * (R_high + R_low) / R_low
-    float factor = (450.0f + 50.0f) / 50.0f;
+    float factor = (75.0f + 20.0f) / 10.0f;
     
     return (avg_mv / 1000.0f) * factor; 
 }

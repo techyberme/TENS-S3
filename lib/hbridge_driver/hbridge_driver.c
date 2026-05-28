@@ -16,6 +16,12 @@ static bool en_A = false;
 static bool en_B = false;
 volatile bool A_bridge_silence = false; //volatile to be constantly read.
 volatile bool B_bridge_silence = false; 
+//Ámbito global (fuera de las funciones)
+static mcpwm_timer_handle_t timer1 = NULL;
+static mcpwm_oper_handle_t oper_or = NULL;
+static mcpwm_gen_handle_t gen_or = NULL;
+static mcpwm_cmpr_handle_t cmp_up = NULL;
+static mcpwm_cmpr_handle_t cmp_down = NULL;
 
 // Timer 100 Hz
 static void burst_callback(void* arg) {
@@ -25,6 +31,8 @@ static void burst_callback(void* arg) {
         if (en_A) {
             mcpwm_generator_set_force_level(generators[0], -1, true);  //-1 turns off the force level.
             mcpwm_generator_set_force_level(generators[1], -1, true);
+            //mcpwm_generator_set_force_level(gen_or, -1, true);
+            
         }
         if (en_B){
             mcpwm_generator_set_force_level(generators[2], 0, true);  
@@ -36,6 +44,7 @@ static void burst_callback(void* arg) {
         if (en_A) {
             mcpwm_generator_set_force_level(generators[0], 0, true); 
             mcpwm_generator_set_force_level(generators[1], 0, true);
+            //mcpwm_generator_set_force_level(gen_or, 0, true);
         }
         if (en_B){
             mcpwm_generator_set_force_level(generators[2], -1, true);  
@@ -98,22 +107,22 @@ void hbridge_init(uint32_t deadtime_ticks)
     //Timer Event
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(generators[gen_idx],
         MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
-        MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+        MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));  //changed to low from high
     //Comparator Event
-    ESP_ERROR_CHECK(mcpwm_generator_set_actions_on_compare_event(generators[gen_idx],
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(generators[gen_idx],
         MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
-        comparators[i], MCPWM_GEN_ACTION_LOW))); 
+        comparators[i], MCPWM_GEN_ACTION_LOW)));  //Changed from low to high
     //deadtime config
     ESP_LOGI(TAG, "Setup deadtime");
     mcpwm_dead_time_config_t dt_config = {
-        .posedge_delay_ticks = deadtime_ticks,
+        .posedge_delay_ticks = deadtime_ticks,   //Changed from pos to negative
         .negedge_delay_ticks = 0
     };
     ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx], &dt_config));   
 
     dt_config = (mcpwm_dead_time_config_t) {
       .posedge_delay_ticks = 0,
-      .negedge_delay_ticks = deadtime_ticks,
+      .negedge_delay_ticks = deadtime_ticks, //Changed from neg to
       .flags.invert_output = true,
     };
     //Deadtime only can be assigned one posedge or negedge for both PWM on the same operator.
@@ -136,9 +145,89 @@ void hbridge_init(uint32_t deadtime_ticks)
     // 100 Hz -> T = 5000us
     
 
+    mcpwm_timer_config_t timer1_config = {
+        .group_id = 0,
+        .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
+        .resolution_hz = 10000000, 
+        .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
+        .period_ticks = 1250, // Mitad del Timer 0
+    };
+    ESP_ERROR_CHECK(mcpwm_new_timer(&timer1_config, &timer1));
+
+    // 2. Sincronizar fase: Timer 1 se reinicia cuando Timer 0 llega a cero (TEZ)
+    mcpwm_sync_handle_t timer0_sync_src;
+    mcpwm_timer_sync_src_config_t sync_src_config = {
+        .timer_event = MCPWM_TIMER_EVENT_EMPTY, // Evento TEZ del Timer 0
+    };
+    ESP_ERROR_CHECK(mcpwm_new_timer_sync_src(timer, &sync_src_config, &timer0_sync_src));
+
+    mcpwm_timer_sync_phase_config_t sync_phase_config = {
+        .sync_src = timer0_sync_src,
+        .count_value = 0,
+        .direction = MCPWM_TIMER_DIRECTION_UP,
+    };
+    ESP_ERROR_CHECK(mcpwm_timer_set_phase_on_sync(timer1, &sync_phase_config));
+    mcpwm_operator_config_t oper_or_config = {.group_id = 0};
+    ESP_ERROR_CHECK(mcpwm_new_operator(&oper_or_config, &oper_or));
+    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oper_or, timer1));
+
+    uint32_t margen_ticks = 50;  
+    mcpwm_comparator_config_t cmp_config = {.flags.update_cmp_on_tez = true};
+
+    ESP_ERROR_CHECK(mcpwm_new_comparator(oper_or, &cmp_config, &cmp_up));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_up, deadtime_ticks + margen_ticks)); 
+
+    // 4. Crear Generador y asignar acciones
+    mcpwm_generator_config_t gen_or_config = {.gen_gpio_num = GPIO_OR};
+    ESP_ERROR_CHECK(mcpwm_new_generator(oper_or, &gen_or_config, &gen_or));
+
+    // At TEZ (tick 0): Both base signals become 1. NAND(1,1) = 0.
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_or,
+        MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+
+    // At cmp_up (deadtime_ticks): One base signal becomes 0. NAND(1,0) = 1.
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or,
+        MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_up, MCPWM_GEN_ACTION_LOW)));
+    mcpwm_generator_set_force_level(gen_or, 1, true);
+    // uint32_t margen_ticks = 5; // El tiempo que la señal OR "tarda" en bajar y "se adelanta" en subir
+
+    // // Seguridad: Evitar underflow si el margen es mayor que la mitad del deadtime
+    // if (deadtime_ticks <= (margen_ticks * 2)) {
+    //     ESP_LOGE(TAG, "Margen demasiado grande para el deadtime actual");
+    //     return;
+    // }
+
+    // mcpwm_comparator_config_t cmp_config = {.flags.update_cmp_on_tez = true};
+    // ESP_ERROR_CHECK(mcpwm_new_comparator(oper_or, &cmp_config, &cmp_up));
+    // ESP_ERROR_CHECK(mcpwm_new_comparator(oper_or, &cmp_config, &cmp_down));
+
+    // // Flanco de BAJADA: Un poco después de empezar el DT (en el tick 5)
+    // ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_down, margen_ticks)); 
+    
+    // // Flanco de SUBIDA: Un poco antes de terminar el DT (ej: si DT es 50, sube en 45)
+    // ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_up, deadtime_ticks - margen_ticks));
+
+    // mcpwm_generator_config_t gen_or_config = {.gen_gpio_num = GPIO_OR};
+    // ESP_ERROR_CHECK(mcpwm_new_generator(oper_or, &gen_or_config, &gen_or));
+
+    // // Configuración de acciones para crear el pulso invertido
+    // // Queremos que la señal esté en ALTO por defecto
+    // ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_or,
+    //     MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+
+    // // Baja en el primer comparador
+    // ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or,
+    //     MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_down, MCPWM_GEN_ACTION_LOW)));
+
+    // // Sube en el segundo comparador
+    // ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or,
+    //     MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_up, MCPWM_GEN_ACTION_HIGH)));
+
     ESP_LOGI(TAG, "Enable and start timer");
     ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
+    ESP_ERROR_CHECK(mcpwm_timer_enable(timer1)); 
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
+    ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer1, MCPWM_TIMER_START_NO_STOP));
 
     
 }
@@ -146,6 +235,7 @@ void hbridge_stop(char channel){
     if (channel == 'A'){
         mcpwm_generator_set_force_level(generators[0], 0, true);
         mcpwm_generator_set_force_level(generators[1], 0, true);
+       // mcpwm_generator_set_force_level(gen_or, 0, true);
         en_A = false;
         }
     if (channel == 'B'){
@@ -161,6 +251,7 @@ void hbridge_start(char channel){
         en_A = true;
         mcpwm_generator_set_force_level(generators[0], -1, true);
         mcpwm_generator_set_force_level(generators[1], -1, true);
+        mcpwm_generator_set_force_level(gen_or, -1, true);
         }
     if (channel == 'B'){
         en_B = true;

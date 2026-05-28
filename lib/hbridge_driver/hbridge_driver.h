@@ -9,6 +9,7 @@
 #define HBRIDGE_GPIO_B1  5
 #define HBRIDGE_GPIO_A2  14
 #define HBRIDGE_GPIO_B2  15
+#define GPIO_OR  7
 
 typedef enum {
     TENS_MODE_CONTINUO, // 4 kHz c 

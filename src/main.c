@@ -17,6 +17,7 @@ static const char *TAG = "TENS_MAIN";
 static QueueHandle_t gpio_evt_queue = NULL;
 static uint32_t last_intr_time_up = 0;
 static uint32_t last_intr_time_down = 0;
+extern volatile float current_ma_global;
 static float volt_A;
 int level = 0;
 
@@ -55,7 +56,7 @@ void buttons_init(void) {
 void app_main(void) {
     // 1. Inicialización de periféricos
     buttons_init();
-    rcfilter_init();
+    //rcfilter_init();
     hbridge_init(200);
     hbridge_start('A');
     flyback_init();
@@ -97,11 +98,6 @@ void app_main(void) {
         // 3. Logueo controlado (Cada 1000ms)
         
         if (now - last_log_time > 1000) {
-                uint16_t dac_now, dac_eeprom;
-        bool ready;
-
-
-
             volt_A = get_voltage('A');
             ESP_LOGI(TAG, "Level: %d, voltage: %f.  | corriente: %f.", level,volt_A, current_ma_global);
             last_log_time = now;
