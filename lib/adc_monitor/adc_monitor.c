@@ -147,7 +147,7 @@ void adc_monitor_init(void) {
  
 
     config.pattern_num = 7;    //solo un canal ADC
-    config.adc_pattern = &adc_pattern;
+    config.adc_pattern = &adc_pattern[7];
 
     ESP_ERROR_CHECK(adc_continuous_config(handle, &config));
     adc_continuous_evt_cbs_t cbs = {
@@ -234,7 +234,6 @@ void process_voltage(uint32_t raw_val, char channel) {
                 float avg_mv = (float)sum_v_a / 32.0f;
                 // conversion
                 ch_A.voltage = (avg_mv / 1000.0f) * div_factor;
-                const float div_factor = (91.0f + 10.0f) / 10.0f;
                 // Reset
                 sum_v_a = 0;
                 count_v_a = 0;

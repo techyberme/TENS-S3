@@ -8,6 +8,11 @@
 #define SESSION_DURATION         5    
 #define SESSION_TICKS         (pdMS_TO_TICKS(SESSION_DURATION *60*1000))   
 #define RECOVER_LEVEL 3  
+typedef enum {
+    CHAN_RUNNING,               
+    CHAN_STBY,
+    CHAN_RECOVER,  
+} ChannelStatus_t;
 //Channel's structure
 typedef struct {
     char id;
@@ -25,14 +30,6 @@ typedef struct {
     ChannelStatus_t status;
 } TensChannel_t;
 
- typedef enum {
-    CHAN_RUNNING,               
-    CHAN_STBY,
-    CHAN_RECOVER,  
-} ChannelStatus_t;
-
-extern TensChannel_t ch_A;
-extern TensChannel_t ch_B;
  
 typedef enum {
     STATE_ZERO,

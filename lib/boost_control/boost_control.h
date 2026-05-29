@@ -55,6 +55,5 @@ void set_pwm_duty_cycle(uint32_t duty_cycle);
  */
 void update_voltage(void);
 
-
 esp_err_t mcp4725_init_safe_start(void);
 #endif

@@ -14,6 +14,7 @@
 #define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
 volatile SystemState_t current_state = STATE_TIME;
+extern float batt_percentage;
 SystemState_t last_state = STATE_ZERO;
 float max_ma = 50.0f; //valor inicial
 volatile int program =1;
@@ -67,9 +68,7 @@ void os_control_task(void *pvParameters) {
             if (current_state == STATE_TIME) {
                 display_set_state(SCREEN_CONFIG_TIME);
                 time_session = 0;
-                //get battery voltae
-                uint8_t percentage =  get_battery();
-                if (percentage < 20) current_state = STATE_LOW_BATTERY;
+                if (batt_percentage < 20) current_state = STATE_LOW_BATTERY;
             }
             if (current_state == STATE_PROGRAM) {
                 display_set_state(SCREEN_CONFIG_PROG);
@@ -100,7 +99,7 @@ void os_control_task(void *pvParameters) {
             // Dentro de boost_control_task...
             case STATE_FUNC:
                 // Use of pointers to easily iterate
-                TensChannel_t* channels[2] = {&ch_A, &ch_B};
+                volatile TensChannel_t* channels[2] = {&ch_A, &ch_B};
                 if (ch_A.level == 0 && ch_B.level == 0) {
                     break;
                 }
@@ -111,9 +110,9 @@ void os_control_task(void *pvParameters) {
                     EN_PWR = true;
                 }
                 for (int i = 0; i < 2; i++) {
-                    TensChannel_t* ch = channels[i];
+                    volatile TensChannel_t* ch = channels[i];
                     //Take the other channel w/ XOR
-                    TensChannel_t* other_ch = channels[i ^ 1];
+                    volatile TensChannel_t* other_ch = channels[i ^ 1];
                     if (ch->status == CHAN_RUNNING){
                         if (ch->level == 0) {
                             hbridge_stop(ch->id);

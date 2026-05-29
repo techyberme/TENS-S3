@@ -17,6 +17,7 @@ static uint32_t current_duty= 38;
 static uint32_t saved_duty= 38;
 static mcpwm_cmpr_handle_t eff_comparator = NULL;
 static led_strip_handle_t led_strip;
+static void boost_start_up(void *pvParameters);  
 led_strip_handle_t configure_led(void)
 {
     // 1. Configuración general del LED
