@@ -1,0 +1,16 @@
+# --- sdkconfig.defaults ---
+
+# Frecuencia del RTOS (crítico para tus vTaskDelay)
+CONFIG_FREERTOS_HZ=1000
+
+# Nivel de Log Global (ej. Warning para producción, Info para dev)
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+# Si utilizas una tabla de particiones personalizada
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# Activación del Watchdog Timer si lo configuras para seguridad médica
+CONFIG_ESP_TASK_WDT_EN=y
