@@ -15,8 +15,8 @@ static u8g2_t u8g2;
 extern uint32_t time_session;
 volatile extern uint32_t duration_session;
 extern int program;
-extern int level_A;
-extern int level_B;
+extern TensChannel_t ch_A;
+extern TensChannel_t ch_B;
 const unsigned char logo[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -214,25 +214,25 @@ static void draw_main_ui()
     if (button_state == UNLOCKED_STATE_A){
         if ((now / 500) % 2 == 0){
          // Level A
-        sprintf(buf, "%d",level_A);
+        sprintf(buf, "%d",ch_A.level);
         u8g2_DrawStr(&u8g2, 15, 42, buf);  
         }
     }
     else{
          // Level A
-    sprintf(buf, "%d",level_A);
+    sprintf(buf, "%d",ch_A.level);
     u8g2_DrawStr(&u8g2, 15, 42, buf);
     }
     if (button_state == UNLOCKED_STATE_B){
         if ((now / 500) % 2 == 0){
          // Level B
-        sprintf(buf, "%d",level_B);
+        sprintf(buf, "%d",ch_B.level);
         u8g2_DrawStr(&u8g2, 85, 42, buf); 
         }
     }
     else{
          // Level B
-        sprintf(buf, "%d",level_B);
+        sprintf(buf, "%d",ch_B.level);
         u8g2_DrawStr(&u8g2, 85, 42, buf);
     }
 

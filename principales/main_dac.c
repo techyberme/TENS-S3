@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <sdkconfig.h>
 #include <math.h>
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "esp_log.h"
 #include "driver/i2c.h"
 #include "driver/gpio.h"

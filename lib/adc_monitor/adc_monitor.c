@@ -8,7 +8,8 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "adc_monitor.h"
-#include "flyback_control.h"
+#include "boost_control.h"
+#include "tensOS.h"
 
 
 static const float battery_curve[9][2] = {
@@ -23,10 +24,8 @@ static const float battery_curve[9][2] = {
     {6400, 0.0}   
 };
 
-volatile float current_A = 0.0f; //volátil para que lo lea siempre
-volatile float current_B = 0.0f; //volátil para que lo lea siempre
-volatile float volt_A = 0.0f;
-volatile float volt_B = 0.0f;
+extern TensChannel_t ch_A;
+extern TensChannel_t ch_B;
 volatile float batt_percentage = 0;
 volatile bool battery_flag = true;
 static const char *TAG = "ADC";
@@ -193,19 +192,19 @@ void process_current(uint32_t raw_val, char channel) {
 
     // 3. Lógica de control y seguridad por canal
     if (channel == 'A') {
-        current_A = current_ma; 
+        ch_A.current = current_ma; 
         
         // Overcurrent
         if (current_ma > 50.0f) { 
-            flyback_stop(ERR_OVERCURRENT);
+            boost_stop(ERR_OVERCURRENT);
             ESP_LOGE("ADC_CURR", "¡Overcurrent in Channel A! %.2f mA. Shutdown Flyback.", current_ma);
         }
     } 
     else if (channel == 'B') {
-        current_B = current_ma; 
+        ch_B.current = current_ma; 
         
          if (current_ma > 50.0f) { 
-            flyback_stop(ERR_OVERCURRENT);
+            boost_stop(ERR_OVERCURRENT);
             ESP_LOGE("ADC_CURR", "¡Overcurrent in Channel B! %.2f mA. Shutdown Flyback.", current_ma);
         }
     }
@@ -234,7 +233,7 @@ void process_voltage(uint32_t raw_val, char channel) {
             if (count_v_a >= 32) {
                 float avg_mv = (float)sum_v_a / 32.0f;
                 // conversion
-                volt_A = (avg_mv / 1000.0f) * div_factor;
+                ch_A.voltage = (avg_mv / 1000.0f) * div_factor;
                 const float div_factor = (91.0f + 10.0f) / 10.0f;
                 // Reset
                 sum_v_a = 0;
@@ -248,7 +247,7 @@ void process_voltage(uint32_t raw_val, char channel) {
             
             if (count_v_b >= 32) {
                 float avg_mv = (float)sum_v_b / 32.0f;
-                volt_B = (avg_mv / 1000.0f) * div_factor;
+                ch_B.voltage  = (avg_mv / 1000.0f) * div_factor;
                 
                 sum_v_b = 0;
                 count_v_b = 0;

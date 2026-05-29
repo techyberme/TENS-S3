@@ -10,11 +10,11 @@
 static const char *TAG = "BUTTONS";
 
 // Global Variables
-extern volatile int level_A;
-extern volatile int level_B;
+extern TensChannel_t ch_A;
+extern TensChannel_t ch_B;
 extern volatile int program;
 extern volatile uint32_t duration_session;
-extern volatile system_state_t current_state; 
+extern volatile SystemState_t current_state; 
 
 
 static button_state_t lock_state = UNLOCKED_STATE_A;
@@ -145,13 +145,14 @@ void buttons_task(void *pvParameters) {
                     case UNLOCKED_STATE_A:
                         inactivity_counter++;
                         if (up_trigger) {
-                            level_A++;
-                            if (level_A > 20) level_A = 20; 
+                            ch_A.level++;
+                            if (ch_A.level> 20) ch_A.level = 20; 
                             inactivity_counter = 0;    
                             beep(50);
                         } else if (down_trigger) {
-                            level_A--;
-                            if (level_A < 0) level_A = 0; 
+                            if (ch_A.level > 0) {
+                                ch_A.level--;
+                            }
                             inactivity_counter = 0;   
                             beep(50);
                         } else if (ok_trigger) {
@@ -170,14 +171,15 @@ void buttons_task(void *pvParameters) {
                     case UNLOCKED_STATE_B:
                         inactivity_counter++;
                         if (up_trigger) {
-                            level_B++;
-                            if (level_B > 20) level_B = 20;   
+                            ch_B.level++;
+                            if (ch_B.level > 20) ch_B.level = 20;   
                             inactivity_counter = 0;  
                             beep(50);
                         } else if (down_trigger) {
-                            level_B--;
-                            if (level_B < 0) level_B = 0;
-                            inactivity_counter = 0;    
+                            if (ch_B.level > 0) {
+                                ch_B.level--;
+                            }
+                            inactivity_counter = 0;   
                             beep(50);
                         } else if (ok_trigger) {
                             lock_state = UNLOCKED_STATE_A;

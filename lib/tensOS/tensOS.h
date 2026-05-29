@@ -15,6 +15,7 @@ typedef struct {
     uint8_t applied_level;
     uint8_t saved_level;
     float current;
+    float voltage;
     bool silence;
     bool was_silenced;
     uint8_t low_current_cnt;

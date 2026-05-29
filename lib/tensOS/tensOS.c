@@ -6,7 +6,7 @@
 #include "esp_log.h"
 #include "tensOS.h"
 #include "adc_monitor.h"
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "hbridge_driver.h"
 #include "oled.h"
 #include "buzzer.h"
@@ -18,13 +18,13 @@ SystemState_t last_state = STATE_ZERO;
 float max_ma = 50.0f; //valor inicial
 volatile int program =1;
 static int recovery_level = RECOVER_LEVEL; 
-//Enable flyback
+//Enable boost
 static bool EN_PWR = false;
 uint32_t io_num;
 volatile uint32_t time_session= 0;
 volatile uint32_t duration_session= SESSION_DURATION;
-TensChannel_t ch_A = { .id = 'A', .level = 0, .current = 0.0f };
-TensChannel_t ch_B = { .id = 'B', .level = 0, .current = 0.0f };
+volatile TensChannel_t ch_A = { .id = 'A', .level = 0, .current = 0.0f };
+volatile TensChannel_t ch_B = { .id = 'B', .level = 0, .current = 0.0f };
 SystemState_t get_system_state(void) {
     return current_state;
 }
@@ -41,7 +41,7 @@ void watchdog_init(void) {
 
 void os_control_task(void *pvParameters) {
     // 1. Asegurar estado inicial seguro
-    flyback_enable(false); 
+    boost_enable(false); 
     set_DAC_value(0, 'A');
     set_DAC_value(0, 'B');
     current_state = STATE_TIME;
@@ -97,7 +97,7 @@ void os_control_task(void *pvParameters) {
             case STATE_PROGRAM:
                 break;
 
-            // Dentro de flyback_control_task...
+            // Dentro de boost_control_task...
             case STATE_FUNC:
                 // Use of pointers to easily iterate
                 TensChannel_t* channels[2] = {&ch_A, &ch_B};
@@ -106,8 +106,8 @@ void os_control_task(void *pvParameters) {
                 }
                
                 if (!EN_PWR){
-                    ESP_LOGI("INIT", "Turning on flyback");
-                    flyback_enable(true);
+                    ESP_LOGI("INIT", "Turning on boost");
+                    boost_enable(true);
                     EN_PWR = true;
                 }
                 for (int i = 0; i < 2; i++) {
@@ -222,7 +222,7 @@ void os_control_task(void *pvParameters) {
             
             case STATE_DONE:
                 buzzer_alarm();
-                flyback_stop(WARN_DONE);
+                boost_stop(WARN_DONE);
                 ESP_LOGI(TAG, "Programa completado");
                 vTaskSuspend(NULL); // Bloquea la tarea por seguridad
                 break;
@@ -230,7 +230,7 @@ void os_control_task(void *pvParameters) {
                 vTaskSuspend(NULL); // Bloquea la tarea por seguridad
                 break;
             case STATE_ERROR:
-                flyback_stop(ERR_IMPEDANCE_HIGH);
+                boost_stop(ERR_IMPEDANCE_HIGH);
                 vTaskSuspend(NULL); // Bloquea la tarea por seguridad
                 break;
 

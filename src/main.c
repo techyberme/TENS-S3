@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <sdkconfig.h>
 #include <math.h>
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "esp_log.h"
 #include "driver/i2c.h"
 #include "driver/gpio.h"
@@ -59,7 +59,7 @@ void app_main(void) {
     //rcfilter_init();
     hbridge_init(200);
     hbridge_start('A');
-    flyback_init();
+    boost_init();
     voltage_monitor_init();
     current_monitor_init();
     uint32_t last_log_time = 0;

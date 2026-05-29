@@ -4,7 +4,7 @@
 #include <sdkconfig.h>
 #include <math.h>
 #include "hbridge_driver.h"
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "current_monitor.h"
 #include "intensity_control.h"
 #include "esp_log.h"
@@ -48,7 +48,7 @@ void buttons_init(void) {
 void app_main(void) {
     // 1. Inicialización de periféricos
     buttons_init();
-    flyback_init();
+    boost_init();
     current_monitor_init();
     uint32_t last_log_time = 0;
     

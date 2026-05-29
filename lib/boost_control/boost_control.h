@@ -1,18 +1,18 @@
-#ifndef FLYBACK_CTRL_H
-#define FLYBACK_CTRL_H
+#ifndef BOOST_CTRL_H
+#define BOOST_CTRL_H
 
 #include <stdint.h>
 #include <stdbool.h>
 // Configuración I2C
-#define I2C_MASTER_SCL_IO    8    
-#define I2C_MASTER_SDA_IO   9
+#define I2C_MASTER_SCL_IO   41    
+#define I2C_MASTER_SDA_IO   40
  
 #define I2C_MASTER_NUM       I2C_NUM_0  
-#define I2C_MASTER_FREQ_HZ   100000 // 400kHz 
+#define I2C_MASTER_FREQ_HZ   100000 // 100kHz 
 #define MCP4725_ADDR_A 0x60
 #define MCP4725_ADDR_B 0x61  
-#define FLYBACK_EN_GPIO 21 
-#define RC_FILTER_GPIO  6
+#define BOOST_EN_GPIO 38 
+#define RC_FILTER_GPIO  8
 #define V_MARGIN_TARGET 2.0f
 #define V_MARGIN_BAND 0.5f                  
 #define LED_STRIP_GPIO_PIN  48
@@ -33,15 +33,15 @@ typedef enum {
 /**
  * @brief Converter & DAC initialization
  */
-void flyback_init(void);
+void boost_init(void);
 
 void set_DAC_value(uint16_t value, char channel); // 0 a 4095
 
-void flyback_enable(bool enable);
+void boost_enable(bool enable);
 /**
  * @brief Emergency Stop
  */
-void flyback_stop(system_error_t error);
+void boost_stop(system_error_t error);
 
 void rcfilter_init(void);
 /**

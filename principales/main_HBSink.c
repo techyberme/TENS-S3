@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <sdkconfig.h>
 #include <math.h>
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "esp_log.h"
 #include "driver/i2c.h"
 #include "driver/gpio.h"
@@ -55,7 +55,7 @@ void app_main(void) {
     buttons_init();
     rcfilter_init();
     hbridge_init(50);
-    flyback_init();
+    boost_init();
     uint32_t last_log_time = 0;
     ESP_LOGI(TAG, "I2C y GPIO inicializados.");
 

@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <sdkconfig.h>
 #include "hbridge_driver.h"
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "current_monitor.h"
 #include "intensity_control.h"
 #include "esp_log.h"
@@ -16,7 +16,7 @@ static const char *TAG = "TENS_MAIN";
 void app_main(void) {
     // 1. Inicialización de periféricos
     vTaskDelay(pdMS_TO_TICKS(10000));
-    flyback_init();
+    boost_init();
     buttons_init();
     current_monitor_init();
     
@@ -26,11 +26,11 @@ void app_main(void) {
 
     // Ahora es seguro encender
     ESP_LOGI("INIT", "Filtro FB estabilizado. Encendiendo Flyback.");
-    gpio_set_level(FLYBACK_EN_GPIO, 0); // Suelta el pin VC
+    gpio_set_level(BOOST_EN_GPIO, 0); // Suelta el pin VC
     uint32_t last_log_time = 0;
     //2. Aquí es donde REALMENTE creas la tarea de control
     xTaskCreate( 
-        flyback_control_task,   // Función que definiste en current_control.c
+        boost_control_task,   // Función que definiste en current_control.c
         "ControlTask",          // Nombre para debug
         4096,                   // Tamaño del stack
         NULL,                   // pvParameters 

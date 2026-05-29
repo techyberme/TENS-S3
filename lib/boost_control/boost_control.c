@@ -1,16 +1,20 @@
 #include "driver/i2c.h"
 #include "freertos/FreeRTOS.h"
 #include "esp_attr.h"
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "driver/mcpwm_prelude.h"
 #include "driver/gpio.h"
 #include "adc_monitor.h"
 #include "hbridge_driver.h"
+#include "tensOS.h"
 #include "led_strip.h"
-
+extern TensChannel_t ch_A;
+extern TensChannel_t ch_B;
 static const char *RCTAG = "RC Filter"; 
+static uint32_t current_duty= 38;
+static uint32_t saved_duty= 38;
 static mcpwm_cmpr_handle_t eff_comparator = NULL;
 static led_strip_handle_t led_strip;
 led_strip_handle_t configure_led(void)
@@ -41,7 +45,7 @@ led_strip_handle_t configure_led(void)
     
     return led_handle;
 }
-void flyback_init(void) {
+void boost_init(void) {
     esp_err_t err;
     // 1. Inicializar bus I2C
     ESP_LOGE("INIT", "inicializando");
@@ -64,12 +68,12 @@ if (err != ESP_OK) {
     }
     // Enabler pin config.
     gpio_config_t io_conf = { 
-        .pin_bit_mask = (1ULL << FLYBACK_EN_GPIO),  
+        .pin_bit_mask = (1ULL << BOOST_EN_GPIO),  
         .mode = GPIO_MODE_OUTPUT,  
-        .pull_up_en = 1 // Por seguridad, el pin a 3.3V. Apaga el flyback
+        .pull_up_en = 1 // Por seguridad, el pin a 3.3V. Apaga el boost
     };
     gpio_config(&io_conf);
-    gpio_set_level(FLYBACK_EN_GPIO, 1); // Empezamos apagados
+    gpio_set_level(BOOST_EN_GPIO, 1); // Empezamos apagados
 
     led_strip = configure_led();
     if (led_strip){
@@ -108,16 +112,23 @@ void set_DAC_value(uint16_t level, char channel) {
 
     
 }
-void flyback_enable(bool enable) {
-    gpio_set_level(FLYBACK_EN_GPIO, !enable); // Encendido del Flyback
-    //TODO controlled converter turn on
+void boost_enable(bool enable) {
+    gpio_set_level(BOOST_EN_GPIO, !enable); //negative logic
+    if (enable){
+        set_pwm_duty_cycle(38);  
+        xTaskCreate(boost_start_up, "boost_ramp", 2048, NULL, 5, NULL);
+    }
+    else {
+        // Seguridad crítica: Al apagar el EN, machacamos el PWM a 0
+        set_pwm_duty_cycle(0);
+    }
 }
 
-void flyback_stop(system_error_t error) {
-    gpio_set_level(FLYBACK_EN_GPIO, 1); // Flyback off
+void boost_stop(system_error_t error) {
+    gpio_set_level(BOOST_EN_GPIO, 1); // Flyback off
     set_DAC_value(0, 'A'); // DACS off
     set_DAC_value(0, 'B'); 
-    hbridge_stop('A'); // Parada de emergencia del puente H, lo hago después del flyback para evitar picos de corriente al cortar el puente H antes que el flyback
+    hbridge_stop('A'); // Parada de emergencia del puente H, lo hago después del boost para evitar picos de corriente al cortar el puente H antes que el boost
     hbridge_stop('B');
     switch (error) {
         case ERR_IMPEDANCE_HIGH:
@@ -206,21 +217,38 @@ void set_pwm_duty_cycle(uint32_t duty_cycle){
 
 
 void update_voltage(void){
-    static uint32_t current_duty= 38;
-    float volt_A = get_voltage('A');
-    float volt_B = get_voltage('B');
-    //Take voltage with less margin
-    float volt = (volt_A < volt_B) ? volt_A : volt_B;
+    float  margin = (ch_A.voltage < ch_B.voltage) ? ch_A.voltage : ch_B.voltage;
     //
-    if (volt> (V_MARGIN_TARGET + V_MARGIN_BAND)){
+    if (margin > (V_MARGIN_TARGET + V_MARGIN_BAND)){
         if (current_duty < 38) current_duty +=1;   //1 volt change
     }
-    else if (volt > (V_MARGIN_TARGET - V_MARGIN_BAND)){
+    else if (margin > (V_MARGIN_TARGET - V_MARGIN_BAND)){
         if (current_duty>1) current_duty -=1; 
     }
     set_pwm_duty_cycle(current_duty);
   }
 
+  // temp task to handle boost start up
+static void boost_start_up(void *pvParameters) {
+    float current_duty = 38.0f;
+    float target_duty = (float)saved_duty;
+    
+    // ramp, 50 steps, 5 ms each
+    const int steps = 50; 
+    float step_size = (current_duty - target_duty) / steps;
+
+    for (int i = 0; i < steps; i++) {
+        current_duty -= step_size;
+        set_pwm_duty_cycle((uint32_t)current_duty);
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    
+    //in case there's a rounding error
+    set_pwm_duty_cycle(saved_duty);
+    
+    // Deletion of task
+    vTaskDelete(NULL); 
+}
 esp_err_t mcp4725_init_safe_start(void) {
     // Arrays para iterar sobre ambos DACs sin duplicar código
     const uint8_t addresses[2] = {MCP4725_ADDR_A, MCP4725_ADDR_B};

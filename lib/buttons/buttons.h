@@ -12,9 +12,9 @@ typedef enum {
     UNLOCKED_STATE_B
 } button_state_t;
 
-#define UP_GPIO  10
-#define DOWN_GPIO 11
-#define OK_GPIO 12
+#define UP_GPIO  17
+#define DOWN_GPIO 18
+#define OK_GPIO 9
 #define POLL_RATE_MS       20
 #define UNLOCK_HOLD_TICKS  (2000 / POLL_RATE_MS) // 100 ticks = 2 seconds
 #define LOCK_TIMEOUT_TICKS (5000 / POLL_RATE_MS)

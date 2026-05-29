@@ -3,7 +3,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "adc_monitor.h"
-#include "flyback_control.h" // Incluye donde esté tu función del DAC
+#include "boost_control.h" // Incluye donde esté tu función del DAC
 #include "oled.h"
 #include "tensOS.h"
 #include "buttons.h"
@@ -13,7 +13,7 @@ static const char *TAG = "MAIN";
 extern volatile float current_A;
 
 void app_main(void) {
-    flyback_init(); // Inicializa tu sistema de control del flyback si es necesario
+    boost_init(); // Inicializa tu sistema de control del boost si es necesario
     buttons_init(); // Inicializa los botones
     current_monitor_init();
     // Esperamos a que el filtro RC de FB se cargue (p. ej. desde un DAC o PWM)
