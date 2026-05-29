@@ -235,8 +235,7 @@ void os_control_task(void *pvParameters) {
 
             default:
                 break;
-        
-    
+
         }
     }
 }

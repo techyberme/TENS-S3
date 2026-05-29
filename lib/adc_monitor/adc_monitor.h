@@ -4,6 +4,7 @@
 #define ADC_ATTEN_CURRENT    ADC_ATTEN_DB_6 //Change to 6
 #define ADC_ATTEN_VOL    ADC_ATTEN_DB_6
 
+#define CHARGE_PIN 2
 #define ADC_CURR_A    ADC_CHANNEL_1 //ADC2_CH1
 #define ADC_CURR_B    ADC_CHANNEL_3     //ADC2_CH3
 #define ADC_VOL_A     ADC_CHANNEL_4  //ADC2_CH2
@@ -12,8 +13,9 @@
 #include <stdint.h>
 
 void adc_monitor_init(void);
-
+void charging_monitor_init(void);
 void adc_calibrate_init(void);
+void charging_calibrate_init(void);
 
 void process_current(uint32_t raw_val, char channel);
 
@@ -28,5 +30,9 @@ float calc_percentage(int volt);
  * @brief  Removes battery reading
  */
 void remove_battery_from_pattern(void);
+
+void check_charge(void);
+
+void charge_task(void *pvParameters);
 
 #endif

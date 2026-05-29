@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h" 
 #include "freertos/semphr.h" //gestiona la sincro entre partes del código
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include "esp_adc/adc_continuous.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -26,11 +27,13 @@ static const float battery_curve[9][2] = {
 
 extern TensChannel_t ch_A;
 extern TensChannel_t ch_B;
-volatile float batt_percentage = 0;
+float batt_percentage = 0;
+bool isCharging = false;
 volatile bool battery_flag = true;
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
 static adc_continuous_handle_t handle = NULL;
+
 static TaskHandle_t s_monitor_task_handle = NULL; // Handle de la tarea que procesará los datos
  
  
@@ -160,6 +163,17 @@ void adc_monitor_init(void) {
     ESP_ERROR_CHECK(adc_continuous_start(handle));
 }
 
+void charging_monitor_init(void) {
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << 2),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf);
+}
+
+
  
 void adc_calibrate_init(void) {
     ESP_LOGI(TAG, "Configuring calibration...");
@@ -190,7 +204,7 @@ void process_current(uint32_t raw_val, char channel) {
 
     float current_ma = (float)volt_mv / 24.9f;
 
-    // 3. Lógica de control y seguridad por canal
+   
     if (channel == 'A') {
         ch_A.current = current_ma; 
         
@@ -310,3 +324,24 @@ void remove_battery_from_pattern(void) {
     
     ESP_LOGI(TAG, "ADC reconfigured");
 }
+
+
+void charge_task(void *pvParameters) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(2000); // Check every 2 secs
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    while (1) {
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        if (gpio_get_level(CHARGE_PIN) == 0) { 
+            //Check again just in case
+            vTaskDelay(pdMS_TO_TICKS(50)); 
+            
+            if (gpio_get_level(CHARGE_PIN) == 0) { 
+                ESP_LOGW("POWER", "Charge detected, stopping");
+                display_charge_shutdown_warning();
+                boost_stop(ERR_CHARGE);
+            }
+            
+        }
+    }
+ }

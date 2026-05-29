@@ -307,3 +307,25 @@ void display_low_battery_warning() {
     u8g2_SendBuffer(&u8g2);
 }
 
+void display_charge_shutdown_warning() {
+    u8g2_ClearBuffer(&u8g2);
+
+    // 1. Dibujar el icono de advertencia
+    // Mantenemos el glifo 67 (triángulo de alerta) para indicar la interrupción
+    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_DrawGlyph(&u8g2, 48, 35, 67); 
+
+    // 2. Configurar texto informativo superior
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); 
+    const char* str1 = "CARGA DETECTADA"; // ~90 píxeles de ancho (entra en los 128)
+    int width1 = u8g2_GetStrWidth(&u8g2, str1);
+    u8g2_DrawStr(&u8g2, (128 - width1) / 2, 50, str1);
+
+    // 3. Configurar texto de acción en negrita/grande
+    u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
+    const char* str2 = "APAGANDO..."; // ~99 píxeles de ancho (entra en los 128)
+    int width2 = u8g2_GetStrWidth(&u8g2, str2);
+    u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
+
+    u8g2_SendBuffer(&u8g2);
+}

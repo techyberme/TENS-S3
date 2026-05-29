@@ -28,10 +28,11 @@ typedef enum {
     ERR_EFFICIENCY_LOW,  // Saturación del sistema
     WARN_DONE,
     ERR_IMPEDANCE_HIGH,  // Límite de DAC alcanzado sin llegar a 20mA
+    ERR_CHARGE, 
 } system_error_t;
 
 /**
- * @brief Converter & DAC initialization
+ * @brief Converter, DAC & LED initialization
  */
 void boost_init(void);
 

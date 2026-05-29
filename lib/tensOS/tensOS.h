@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define WDI_GPIO 15
-#define SESSION_DURATION         5    
+#define WDI_GPIO 48
+#define SESSION_DURATION         25    
 #define SESSION_TICKS         (pdMS_TO_TICKS(SESSION_DURATION *60*1000))   
 #define RECOVER_LEVEL 3  
 typedef enum {
