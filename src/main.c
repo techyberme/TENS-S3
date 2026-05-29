@@ -14,6 +14,7 @@ static const char *TAG = "MAIN";
 
 
 void app_main(void) {
+    //inicialización de módulos
     boost_init(); // Inicializa tu sistema de control del boost si es necesario
     buttons_init(); // Inicializa los botones
     adc_monitor_init();
