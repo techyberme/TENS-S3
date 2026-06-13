@@ -1,30 +1,38 @@
 #ifndef ADC_MONITOR_H
 #define ADC_MONITOR_H
 
-#define ADC_ATTEN_CURRENT    ADC_ATTEN_DB_0
-#define ADC_ATTEN_VOL    ADC_ATTEN_DB_12
-#define ADC_VOL     ADC_CHANNEL_4  //pin 15 en S3, utilizo el ADC2 porque este trabaja en oneshot y el ADC1 en continuo,
+#define ADC_ATTEN_CURRENT    ADC_ATTEN_DB_6 //Change to 6
+#define ADC_ATTEN_VOL    ADC_ATTEN_DB_6
 
+#define CHARGE_PIN 2
+#define ADC_CURR_A    ADC_CHANNEL_1 //ADC2_CH1
+#define ADC_CURR_B    ADC_CHANNEL_3     //ADC2_CH3
+#define ADC_VOL_A     ADC_CHANNEL_4  //ADC2_CH2
+#define ADC_VOL_B     ADC_CHANNEL_2 //ADC2_CH4
+#define ADC_BAT        ADC_CHANNEL_5 //ADC_CH5
 #include <stdint.h>
 
+void adc_monitor_init(void);
+void charging_monitor_init(void);
+void adc_calibrate_init(void);
+void charging_calibrate_init(void);
+
+void process_current(uint32_t raw_val, char channel);
+
+void process_voltage(uint32_t raw_val, char channel);
+ 
+/**
+ * @return Returns battery percentage
+ */
+float calc_percentage(int volt);
 
 /**
- * @brief Current ADC
+ * @brief  Removes battery reading
  */
-void current_monitor_init(void);
+void remove_battery_from_pattern(void);
 
-/**
- * @brief Voltage ADC
- */
-void voltage_monitor_init(void);
+void check_charge(void);
 
-void current_monitor_calibrate_init(void);
-
-void voltage_monitor_calibrate_init(void);
-
-/**
- * @return Collector Voltae
- */
-float get_voltage(void);
+void charge_task(void *pvParameters);
 
 #endif

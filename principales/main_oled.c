@@ -4,13 +4,13 @@
 #include <unistd.h>
 #include <sdkconfig.h>
 #include "hbridge_driver.h"
-#include "flyback_control.h"
+#include "boost_control.h"
 #include "current_monitor.h"
 #include "intensity_control.h"
 #include "esp_log.h"
 #include "driver/i2c.h"
 
-extern volatile float current_ma_global;
+extern volatile float current_A;
 static const char *TAG = "TENS_MAIN";
 
 
@@ -24,7 +24,7 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(3000));
     // 3. Lanzar la interfaz y continuar con el resto del sistema
     display_start_ui_task();
-    flyback_init();
+    boost_init();
     buttons_init();
     current_monitor_init();
     // Esperamos a que el filtro RC de FB se cargue (p. ej. desde un DAC o PWM)
@@ -33,11 +33,11 @@ void app_main(void) {
 
     // Ahora es seguro encender
     ESP_LOGI("INIT", "Filtro FB estabilizado. Encendiendo Flyback.");
-    gpio_set_level(FLYBACK_EN_GPIO, 0); // Suelta el pin VC
+    gpio_set_level(BOOST_EN_GPIO, 0); // Suelta el pin VC
     uint32_t last_log_time = 0;
     //2. Aquí es donde REALMENTE creas la tarea de control
     xTaskCreate( 
-        flyback_control_task,   // Función que definiste en current_control.c
+        boost_control_task,   // Función que definiste en current_control.c
         "ControlTask",          // Nombre para debug
         4096,                   // Tamaño del stack
         NULL,                   // pvParameters 
@@ -51,7 +51,7 @@ void app_main(void) {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         if (now - last_log_time > 1000) {
             // Imprimimos la lectura del ADC que la otra tarea está actualizando
-            ESP_LOGI(TAG, "Corriente Medida: %.1f mA", current_ma_global);
+            ESP_LOGI(TAG, "Corriente Medida: %.1f mA", current_A);
             last_log_time = now;
         }
          vTaskDelay(pdMS_TO_TICKS(20));

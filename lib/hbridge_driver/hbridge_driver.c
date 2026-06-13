@@ -7,27 +7,54 @@
 #include "hbridge_driver.h"
 
 static const char *TAG = "H-Bridge"; 
-static mcpwm_gen_handle_t generators[2];
-static mcpwm_timer_handle_t timer = NULL;  //Base de tiempo
+static mcpwm_oper_handle_t operators[2];
+static mcpwm_cmpr_handle_t comparators[2];
+static mcpwm_gen_handle_t generators[4];
+static mcpwm_timer_handle_t timer = NULL;  //Time base
 static tens_mode_t current_mode = TENS_MODE_CONTINUO;
-volatile bool bridge_silence = false; //volátil para que lo lea siempre
+static bool en_A = false;
+static bool en_B = false;
+volatile bool A_bridge_silence = false; //volatile to be constantly read.
+volatile bool B_bridge_silence = false; 
+//Ámbito global (fuera de las funciones)
+static mcpwm_timer_handle_t timer1 = NULL;
+static mcpwm_oper_handle_t oper_or = NULL;
+static mcpwm_gen_handle_t gen_or = NULL;
+static mcpwm_cmpr_handle_t cmp_up = NULL;
+static mcpwm_cmpr_handle_t cmp_down = NULL;
 
 // Timer 100 Hz
 static void burst_callback(void* arg) {
     static bool output_en = true;
-    // Si estamos en burst, conmutamos
-    if (current_mode == TENS_MODE_BURST) {
-        if (output_en) {
-            mcpwm_generator_set_force_level(generators[0], -1, true);  //-1 quita el forzado
+    // If burst, commute
+    if (output_en) {
+        if (en_A) {
+            mcpwm_generator_set_force_level(generators[0], -1, true);  //-1 turns off the force level.
             mcpwm_generator_set_force_level(generators[1], -1, true);
-            bridge_silence=false;
-        } else {
-            mcpwm_generator_set_force_level(generators[0], 0, true);
-            mcpwm_generator_set_force_level(generators[1], 0, true);
-            bridge_silence=true;
+            //mcpwm_generator_set_force_level(gen_or, -1, true);
+            
         }
-        output_en = !output_en;
-    } 
+        if (en_B){
+            mcpwm_generator_set_force_level(generators[2], 0, true);  
+            mcpwm_generator_set_force_level(generators[3], 0, true);
+        }
+        A_bridge_silence=false;
+        B_bridge_silence=true;
+    } else {
+        if (en_A) {
+            mcpwm_generator_set_force_level(generators[0], 0, true); 
+            mcpwm_generator_set_force_level(generators[1], 0, true);
+            //mcpwm_generator_set_force_level(gen_or, 0, true);
+        }
+        if (en_B){
+            mcpwm_generator_set_force_level(generators[2], -1, true);  
+            mcpwm_generator_set_force_level(generators[3], -1, true);
+        }
+        A_bridge_silence=true;
+        B_bridge_silence=false;
+    }
+    output_en = !output_en;
+
 }
 void hbridge_init(uint32_t deadtime_ticks)
 {
@@ -41,82 +68,208 @@ void hbridge_init(uint32_t deadtime_ticks)
         .period_ticks = 2500, // 2500 ticks for 1 cycle, 10 MHz/ 2500= 4 KHz Timer
     };
     ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &timer));
+    for (int i=0;i<2;i++){
+        // ----- OPERATOR, Definition of channel ----- 
+        ESP_LOGI(TAG, "Config operators");
+        mcpwm_operator_config_t operator_config = {
+            .group_id = 0,
+        };
+        ESP_ERROR_CHECK(mcpwm_new_operator(&operator_config, &operators[i]));
+        ESP_LOGI(TAG, "Connect operators to the same timer");
+        ESP_ERROR_CHECK(mcpwm_operator_connect_timer(operators[i], timer));
 
-    // ----- OPERATOR, Definition of channel ----- 
-    ESP_LOGI(TAG, "Create operators");
-    mcpwm_oper_handle_t operators = NULL;
-    mcpwm_operator_config_t operator_config = {
-        .group_id = 0,
-    };
-    ESP_ERROR_CHECK(mcpwm_new_operator(&operator_config, &operators));
-    ESP_LOGI(TAG, "Connect operators to the same timer");
-    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(operators, timer));
 
-
-    // -----Comparator-----//
-    ESP_LOGI(TAG, "Create comparators");
-    mcpwm_cmpr_handle_t comparators = NULL;
-    mcpwm_comparator_config_t compare_config = {
-        .flags.update_cmp_on_tez = true,
-    };
-    ESP_ERROR_CHECK(mcpwm_new_comparator(operators, &compare_config, &comparators));
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparators, 1250));  //50% Duty ratio
-
+        // -----Comparator-----//
+        ESP_LOGI(TAG, "Configcomparators");
+        mcpwm_comparator_config_t compare_config = {
+            .flags.update_cmp_on_tez = true,
+        };
+        ESP_ERROR_CHECK(mcpwm_new_comparator(operators[i], &compare_config, &comparators[i]));
+        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparators[i], 1250));  //50% Duty ratio
+    }
     
 
     // -----Generator-----//
     ESP_LOGI(TAG, "Create generators");
-    mcpwm_generator_config_t gen_config = {};
-    const int gen_gpios[2] = {HBRIDGE_GPIO_A,HBRIDGE_GPIO_B}; //recommended pins 
-    for (int i=0;i<=1;i++){
-        gen_config.gen_gpio_num = gen_gpios[i];
-        ESP_ERROR_CHECK(mcpwm_new_generator(operators, &gen_config, &generators[i]));
+    const int gen_gpios[4] = {HBRIDGE_GPIO_A1,HBRIDGE_GPIO_B1,HBRIDGE_GPIO_A2,HBRIDGE_GPIO_B2}; 
+    for (int i=0;i<4;i++){
+        mcpwm_generator_config_t gen_config = {.gen_gpio_num = gen_gpios[i]};
+        //gens 0 and 1, operator 0 and 2 and 3, operator 1
+        int oper_idx = i/2;
+        ESP_ERROR_CHECK(mcpwm_new_generator(operators[oper_idx], &gen_config, &generators[i]));
+        mcpwm_generator_set_force_level(generators[i], 0, true); //generators start stopped
     }
-
-    // ====== Generator Action  ====== //
+    
+    // Generator action
+    for (int i=0; i<2; i++){
     ESP_LOGI(TAG, "Set generator action on timer and compare event");
-    // PWM Start with HIGH State when Timer is 0 and LOW State when Comparators value is equal Timer, For MCPWM_TIMER_COUNT_MODE_UP
-    //First generator
-    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(generators[0],MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
-    ESP_ERROR_CHECK(mcpwm_generator_set_actions_on_compare_event(generators[0],MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparators, MCPWM_GEN_ACTION_LOW))); //el pin se pone a cero
-    
-    
-    //Deadtime only can be assign one posedge or negedge for both PWM on the same operator.
+    int gen_idx = i * 2;
+    //Timer Event
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(generators[gen_idx],
+        MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
+        MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));  //changed to low from high
+    //Comparator Event
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(generators[gen_idx],
+        MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
+        comparators[i], MCPWM_GEN_ACTION_LOW)));  //Changed from low to high
+    //deadtime config
     ESP_LOGI(TAG, "Setup deadtime");
     mcpwm_dead_time_config_t dt_config = {
-        .posedge_delay_ticks = deadtime_ticks,
+        .posedge_delay_ticks = deadtime_ticks,   //Changed from pos to negative
         .negedge_delay_ticks = 0
     };
-    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[0],generators[0], &dt_config));
+    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx], &dt_config));   
+
     dt_config = (mcpwm_dead_time_config_t) {
       .posedge_delay_ticks = 0,
-      .negedge_delay_ticks = deadtime_ticks,
+      .negedge_delay_ticks = deadtime_ticks, //Changed from neg to
       .flags.invert_output = true,
     };
-    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[0],generators[1], &dt_config));  //generator 0 controls generator 1 so we don't need to define gen. 1
-    // --- CONFIGURACIÓN DEL BURST DE 100 HZ ---
-    //Puntero a la interrupción
-    const esp_timer_create_args_t periodic_timer_args = {
-        .callback = &burst_callback,
-        .name = "tens_burst"
-    };
-    //Identificación temporizador
-    esp_timer_handle_t burst_timer;
-    //Creación temporizador
-    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &burst_timer));
+    //Deadtime only can be assigned one posedge or negedge for both PWM on the same operator.
+    //Generator 0 controls Generator 1 so we don't need to define gen. 1
+    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx + 1], &dt_config));  
+    }
     
-    // 100 Hz -> Periodo 10ms. (5000us)
-    ESP_ERROR_CHECK(esp_timer_start_periodic(burst_timer, 5000));
+    // --- 100 Hz BURST ---
+    //Pointer to interruption
+    if (current_mode == TENS_MODE_BURST) {
+        const esp_timer_create_args_t periodic_timer_args = {
+            .callback = &burst_callback,
+            .name = "tens_burst"
+        };
+        esp_timer_handle_t burst_timer;
+        //Timer creation
+        ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &burst_timer));
+        ESP_ERROR_CHECK(esp_timer_start_periodic(burst_timer, 5000));
+    }
+    // 100 Hz -> T = 5000us
+    
+
+    mcpwm_timer_config_t timer1_config = {
+        .group_id = 0,
+        .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
+        .resolution_hz = 10000000, 
+        .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
+        .period_ticks = 1250, // Mitad del Timer 0
+    };
+    ESP_ERROR_CHECK(mcpwm_new_timer(&timer1_config, &timer1));
+
+    // 2. Sincronizar fase: Timer 1 se reinicia cuando Timer 0 llega a cero (TEZ)
+    mcpwm_sync_handle_t timer0_sync_src;
+    mcpwm_timer_sync_src_config_t sync_src_config = {
+        .timer_event = MCPWM_TIMER_EVENT_EMPTY, // Evento TEZ del Timer 0
+    };
+    ESP_ERROR_CHECK(mcpwm_new_timer_sync_src(timer, &sync_src_config, &timer0_sync_src));
+
+    mcpwm_timer_sync_phase_config_t sync_phase_config = {
+        .sync_src = timer0_sync_src,
+        .count_value = 0,
+        .direction = MCPWM_TIMER_DIRECTION_UP,
+    };
+    ESP_ERROR_CHECK(mcpwm_timer_set_phase_on_sync(timer1, &sync_phase_config));
+    mcpwm_operator_config_t oper_or_config = {.group_id = 0};
+    ESP_ERROR_CHECK(mcpwm_new_operator(&oper_or_config, &oper_or));
+    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oper_or, timer1));
+
+    uint32_t margen_ticks = 50;  
+    mcpwm_comparator_config_t cmp_config = {.flags.update_cmp_on_tez = true};
+
+    ESP_ERROR_CHECK(mcpwm_new_comparator(oper_or, &cmp_config, &cmp_up));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_up, deadtime_ticks + margen_ticks)); 
+
+    // 4. Crear Generador y asignar acciones
+    mcpwm_generator_config_t gen_or_config = {.gen_gpio_num = GPIO_OR};
+    ESP_ERROR_CHECK(mcpwm_new_generator(oper_or, &gen_or_config, &gen_or));
+
+    // At TEZ (tick 0): Both base signals become 1. NAND(1,1) = 0.
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_or,
+        MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+
+    // At cmp_up (deadtime_ticks): One base signal becomes 0. NAND(1,0) = 1.
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or,
+        MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_up, MCPWM_GEN_ACTION_LOW)));
+    mcpwm_generator_set_force_level(gen_or, 1, true);
+    // uint32_t margen_ticks = 5; // El tiempo que la señal OR "tarda" en bajar y "se adelanta" en subir
+
+    // // Seguridad: Evitar underflow si el margen es mayor que la mitad del deadtime
+    // if (deadtime_ticks <= (margen_ticks * 2)) {
+    //     ESP_LOGE(TAG, "Margen demasiado grande para el deadtime actual");
+    //     return;
+    // }
+
+    // mcpwm_comparator_config_t cmp_config = {.flags.update_cmp_on_tez = true};
+    // ESP_ERROR_CHECK(mcpwm_new_comparator(oper_or, &cmp_config, &cmp_up));
+    // ESP_ERROR_CHECK(mcpwm_new_comparator(oper_or, &cmp_config, &cmp_down));
+
+    // // Flanco de BAJADA: Un poco después de empezar el DT (en el tick 5)
+    // ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_down, margen_ticks)); 
+    
+    // // Flanco de SUBIDA: Un poco antes de terminar el DT (ej: si DT es 50, sube en 45)
+    // ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_up, deadtime_ticks - margen_ticks));
+
+    // mcpwm_generator_config_t gen_or_config = {.gen_gpio_num = GPIO_OR};
+    // ESP_ERROR_CHECK(mcpwm_new_generator(oper_or, &gen_or_config, &gen_or));
+
+    // // Configuración de acciones para crear el pulso invertido
+    // // Queremos que la señal esté en ALTO por defecto
+    // ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_or,
+    //     MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+
+    // // Baja en el primer comparador
+    // ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or,
+    //     MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_down, MCPWM_GEN_ACTION_LOW)));
+
+    // // Sube en el segundo comparador
+    // ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or,
+    //     MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_up, MCPWM_GEN_ACTION_HIGH)));
 
     ESP_LOGI(TAG, "Enable and start timer");
     ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
+    ESP_ERROR_CHECK(mcpwm_timer_enable(timer1)); 
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
+    ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer1, MCPWM_TIMER_START_NO_STOP));
+
+    
 }
-void hbridge_stop(void){
-    mcpwm_generator_set_force_level(generators[0], 0, true);
-    mcpwm_generator_set_force_level(generators[1], 0, true);
-    mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY);
+void hbridge_stop(char channel){
+    if (channel == 'A'){
+        mcpwm_generator_set_force_level(generators[0], 0, true);
+        mcpwm_generator_set_force_level(generators[1], 0, true);
+       // mcpwm_generator_set_force_level(gen_or, 0, true);
+        en_A = false;
+        }
+    if (channel == 'B'){
+        mcpwm_generator_set_force_level(generators[2], 0, true);
+        mcpwm_generator_set_force_level(generators[3], 0, true);
+        en_B = false;
+        }
+    //mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY);
+}
+void hbridge_start(char channel){   
+    //enable A and forcing is turned off
+    if (channel == 'A'){
+        en_A = true;
+        mcpwm_generator_set_force_level(generators[0], -1, true);
+        mcpwm_generator_set_force_level(generators[1], -1, true);
+        mcpwm_generator_set_force_level(gen_or, -1, true);
+        }
+    if (channel == 'B'){
+        en_B = true;
+        mcpwm_generator_set_force_level(generators[2], -1, true);
+        mcpwm_generator_set_force_level(generators[3], -1, true);
+        }
 }
 
 
-
+void hbridge_set_mode(tens_mode_t mode) {
+    // Change from BURST to continous, make sure no gen is forced
+    if (current_mode == TENS_MODE_BURST && mode != TENS_MODE_BURST) {
+        for (int i = 0; i < 4; i++) {
+            mcpwm_generator_set_force_level(generators[i], -1, true); 
+        }
+        A_bridge_silence = false;
+        B_bridge_silence = false;
+        ESP_LOGI(TAG, "Freed generators");
+    }
+    current_mode = mode;
+}

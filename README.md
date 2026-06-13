@@ -1,41 +1,73 @@
-# CONTROL DE CORRIENTE DE TENS MEDIANTE ESP32
-Sistema de monitorización y seguridad para un estimulador eléctrico transcutáneo (TENS), basado en el ESP32-S3. El proyecto utiliza un motor de adquisición continua mediante DMA para garantizar la detección de picos de corriente sin sobrecargar la CPU.
+# TENS-S3 Functionalities Overview
 
-## 🛠️ Arquitectura Técnica
+This project implements a Transcutaneous Electrical Nerve Stimulation (TENS) device using an ESP32-S3. The system consists of multiple modules managing different hardware and software features. Below is a comprehensive list of the functionalities identified in the codebase. *(Note: Some features may still be in development or incomplete).*
 
-* Hardware (Productor) : El ADC1 funciona en modo continuo, llenando buffers de 256 bytes vía DMA a una frecuencia de 20-40kHz.
+## 1. System State & Channel Management (`tensOS`)
+- **System State Machine**: Controls the device lifecycle (`ZERO`, `TIME`, `PROGRAM`, `INIT`, `FUNC`, `DONE`, `LOW_BATTERY`, `ERROR`).
+- **Dual-Channel Control**: Tracks independent channel states (`RUNNING`, `STBY`, `RECOVER`), applied intensity levels, real-time current, and voltage feedback.
+- **Session Control**: Enforces session duration and timeouts.
+- **Watchdog Timer**: Ensures system stability and safety.
 
-* Sincronización: Una interrupción (ISR) envía una notificación de tarea (vTaskNotify) solo cuando el buffer está listo.
+## 2. Power Delivery & Control (`boost_control`)
+- **Boost Converter Regulation**: Controls voltage generation using a PWM signal (RC Filter) and reads feedback to maintain the target voltage margin.
+- **DAC Communication**: Adjusts output amplitudes independently for Channels A and B using dual MCP4725 DACs over I2C.
+- **Emergency Stop & Safety Diagnostics**: Detects system faults such as:
+  - Overcurrent / Overvoltage
+  - Open Circuit (Electrode Detachment)
+  - High Impedance
+  - Low Efficiency (System Saturation)
+- **LED Indicator**: Integrates single LED strip (RMT) for visual status.
 
-* Software (Consumidor): Una tarea dedicada de FreeRTOS (Prioridad 10) procesa los datos, calcula el valor de cresta (pico) y la media, y ejecuta la lógica de corte de seguridad en microsegundos.
+## 3. Stimulation Driver (`hbridge_driver`)
+- **H-Bridge Output**: Generates the stimulation pulses using GPIOs.
+- **Configurable Modes**: 
+  - Continuous Mode: 4 kHz constant output.
+  - Burst Mode: 4 kHz modulated at 100 Hz.
+  - Off state.
 
-## 🚀 Características Principales
-* Procesamiento No Bloqueante: El uso de notificaciones permite que la CPU descanse mientras el hardware recolecta muestras.
+## 4. Monitoring & Battery (`adc_monitor`)
+- **Voltage & Current Sensing**: Reads ADC values from Channels A and B for closed-loop control.
+- **Battery Management**: Calculates battery percentage and filters readings to avoid noise.
+- **Charging Monitor**: Detects active charging and prevents operation during charge cycles.
+- **ADC Calibration**: Supports precise measurements through calibration routines.
 
-* Calibración por eFuse: Integración con el esquema de calibración de Espressif para compensar la no linealidad del ADC del S3.
+## 5. User Interface (`oled` & `buttons`)
+- **OLED Display Interface**: Drives an OLED screen indicating UI states: Logo, Time Config, Program Config, Running, Detached Electrodes, and Battery warnings.
+- **Physical Navigation**: Three-button input (UP, DOWN, OK) with debouncing.
+- **Lock/Unlock States**: Features security lockouts (`LOCKED`, `UNLOCKING`, `UNLOCKED`) and a specific `DOCTOR_STATE`.
 
-* Protección Crítica: Límite de seguridad de 50mA con respuesta inmediata para evitar quemaduras o fibrilación.
+## 6. Audio Feedback (`buzzer`)
+- **Buzzer Control**: Uses the ESP32 LEDC peripheral to generate UI beeps for button presses and alarm tones for error warnings.
 
-* Optimización FPU: Cálculos realizados en punto flotante simple (float32) aprovechando la unidad de punto flotante del LX7.
+## 7. Persistent Configuration (`settings`)
+- **NVS Storage**: Saves critical configurations into Non-Volatile Storage to persist across reboots.
+- **Saved Data**: Stores parameters such as the active Program, Session Duration, and 'Doctor' permissions.
 
-* Rango de Muestreo: Configurado a 20kHz (sobremuestreo para pulsos de TENS de 100-500µs).
+## 8. Project Structure
 
-* Resolución: 12 bits (ADC_BITWIDTH_12).
+The repository is organized as follows:
 
-## 📁 Estructura del Proyecto
-📦 ESP32-S3_TENS_Project
-
-┣ 📂 lib
- 
- ┃ ┣ 📂 current_monitor   : Lógica de seguridad y muestreo DMA (20kHz)
- 
- ┃ ┗ 📂 hbridge_driver     : Control del Puente en H (4kHz PWM / 0.5 DC)
- 
- ┣ 📂 src
- 
- ┃ ┗ 📜 main.c             : Orquestador del sistema y gestión de tareas
- 
- ┗ 📜 platformio.ini       : Configuración del entorno y dependencias
-
-
- 
+```text
+TENS-S3/
+├── src/                    # Main application source code
+│   ├── main.c              # System orchestrator and entry point
+│   ├── CMakeLists.txt      # Build configuration for src
+│   └── README.md           # This functionalities overview
+├── lib/                    # Core project-specific libraries
+│   ├── adc_monitor/        # ADC, battery, and charging monitoring
+│   ├── boost_control/      # Boost converter, DAC, and safety logic
+│   ├── buttons/            # Hardware button input and debouncing
+│   ├── buzzer/             # Audio feedback control
+│   ├── hbridge_driver/     # H-bridge stimulation output control
+│   ├── oled/               # OLED screen UI management
+│   ├── settings/           # Non-volatile storage for user preferences
+│   └── tensOS/             # Core state machine and channel manager
+├── components/             # External dependencies and IDF components
+│   ├── led_strip/          # RGB LED strip driver
+│   ├── u8g2/               # Display graphics library
+│   └── u8g2-hal-esp-idf/   # Hardware abstraction for u8g2 on ESP32
+├── principales/            # Alternate or legacy main files for testing
+├── include/                # Global headers
+├── test/                   # Unit tests
+└── platformio.ini          # PlatformIO project configuration
+```
