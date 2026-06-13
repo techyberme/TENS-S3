@@ -36,3 +36,6 @@ Sistema de monitorización y seguridad para un estimulador eléctrico transcutá
  ┃ ┗ 📜 main.c             : Orquestador del sistema y gestión de tareas
  
  ┗ 📜 platformio.ini       : Configuración del entorno y dependencias
+
+
+ 
