@@ -11,6 +11,7 @@
 #include "adc_monitor.h"
 #include "boost_control.h"
 #include "tensOS.h"
+#include "oled.h"
 
 
 static const float battery_curve[9][2] = {
@@ -50,14 +51,13 @@ static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle,
 }
 
 void monitor_task(void *pvParameters) {
-    uint8_t result[256]; // Coincide con conv_frame_size
+    uint8_t result[256]; //  conv_frame_size
     //length of buffer
     uint32_t ret_num = 0;  
     //local batt variable
     uint32_t sum_bat_raw = 0;
     uint32_t count_bat = 0;
     while (1) {
-        // Bloqueo eficiente CPU, (…, tiempo de espera eterno)
         if(ulTaskNotifyTake(pdTRUE, portMAX_DELAY)){
             if (cali_handle == NULL) {
                     ESP_LOGE(TAG, "No calibration.");
@@ -125,7 +125,7 @@ void adc_monitor_init(void) {
     
     // Configuración del Driver Continuo
     adc_continuous_handle_cfg_t adc_config = {
-        .max_store_buf_size = 1024, // Tamaño del buffer en RAM, almacena las muestras antes de que se pierdan
+        .max_store_buf_size = 1024, // buffer in the ram
         .conv_frame_size = 256,     // 256/(4 bytes/muestra) = 64 muestras que es envían a la cpu en batch, interrupción
     };
     ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &handle)); //el handle es la dirección de la ram
@@ -147,10 +147,8 @@ void adc_monitor_init(void) {
         { .atten = ADC_ATTEN_VOL, .channel = ADC_BAT,    .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT }
     };
 
- 
-
-    config.pattern_num = 7;    //solo un canal ADC
-    config.adc_pattern = &adc_pattern[7];
+    config.pattern_num = 7;    
+    config.adc_pattern = &adc_pattern[0];
 
     ESP_ERROR_CHECK(adc_continuous_config(handle, &config));
     adc_continuous_evt_cbs_t cbs = {
@@ -233,7 +231,7 @@ void process_voltage(uint32_t raw_val, char channel) {
         return;
     }
 
-     static uint32_t sum_v_a = 0, count_v_a = 0;
+    static uint32_t sum_v_a = 0, count_v_a = 0;
     static uint32_t sum_v_b = 0, count_v_b = 0;
 
     // Division factor

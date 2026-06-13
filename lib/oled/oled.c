@@ -287,10 +287,9 @@ void display_start_ui_task(void) {
 void display_low_battery_warning() {
     u8g2_ClearBuffer(&u8g2);
 
-    // 1. Dibujar el icono de advertencia (Warning Sign)
-    // Usamos Open Iconic. El glifo 67 es el triángulo de advertencia.
-    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
-    u8g2_DrawGlyph(&u8g2, 48, 35, 67); 
+    // open_iconic_all_4x
+     u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_DrawGlyph(&u8g2, 48, 35, 64); 
 
     // 2. Configurar texto "BATERÍA"
     u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); // Fuente compacta para el título
@@ -309,11 +308,8 @@ void display_low_battery_warning() {
 
 void display_charge_shutdown_warning() {
     u8g2_ClearBuffer(&u8g2);
-
-    // 1. Dibujar el icono de advertencia
-    // Mantenemos el glifo 67 (triángulo de alerta) para indicar la interrupción
     u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
-    u8g2_DrawGlyph(&u8g2, 48, 35, 67); 
+    u8g2_DrawGlyph(&u8g2, 48, 35, 71); 
 
     // 2. Configurar texto informativo superior
     u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); 
