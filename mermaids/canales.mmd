@@ -1,0 +1,10 @@
+stateDiagram-v2
+    direction LR
+    [*] --> RUNNING : Nivel > 0
+    
+    RUNNING --> STBY : Corriente < 1mA (Desconexión)
+    
+    STBY --> RECOVER : Contacto detectado 
+    
+    RECOVER --> RUNNING : Rampa completada
+    RECOVER --> STBY : Pérdida contacto

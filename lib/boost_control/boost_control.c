@@ -54,7 +54,7 @@ void boost_init(void) {
         .mode = I2C_MODE_MASTER,    
         .sda_io_num = I2C_MASTER_SDA_IO,
         .scl_io_num = I2C_MASTER_SCL_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE, //Internal resistences
+        .sda_pullup_en = GPIO_PULLUP_ENABLE, //Internal resistances
         .scl_pullup_en = GPIO_PULLUP_ENABLE,
         .master.clk_speed = I2C_MASTER_FREQ_HZ,
     };
@@ -71,15 +71,15 @@ if (err != ESP_OK) {
     gpio_config_t io_conf = { 
         .pin_bit_mask = (1ULL << BOOST_EN_GPIO),  
         .mode = GPIO_MODE_OUTPUT,  
-        .pull_up_en = 1 // Por seguridad, el pin a 3.3V. Apaga el boost
+        .pull_up_en = 1 // pin to 3,3 for safety measures
     };
     gpio_config(&io_conf);
-    gpio_set_level(BOOST_EN_GPIO, 1); // Empezamos apagados
+    gpio_set_level(BOOST_EN_GPIO, 1); // Start off
 
     led_strip = configure_led();
     if (led_strip){
         ESP_LOGI("INIT", "LED configurado correctamente");
-        led_strip_clear(led_strip); // Aseguramos que el LED empieza apagado
+        led_strip_clear(led_strip); // led starts off
     }
     else{
         ESP_LOGE("INIT", "Error al configurar el LED");
@@ -125,14 +125,19 @@ void boost_enable(bool enable) {
     }
 }
 
-void boost_stop(system_error_t error) {
+void boost_stop(system_state_t error) {
     gpio_set_level(BOOST_EN_GPIO, 1); // Flyback off
     set_DAC_value(0, 'A'); // DACS off
     set_DAC_value(0, 'B'); 
     hbridge_stop('A'); // Parada de emergencia del puente H, lo hago después del boost para evitar picos de corriente al cortar el puente H antes que el boost
     hbridge_stop('B');
-    switch (error) {
-        case ERR_IMPEDANCE_HIGH:
+    update_led(error);
+
+} 
+
+void update_led(system_state_t state){
+    switch (state) {
+        case WARN_OPEN_CIRCUIT:
             led_strip_set_pixel(led_strip, 0, 212, 99, 28); // Naranja 
             ESP_LOGE("SAFETY", "STOP: Impedancia elevada");
             break;
@@ -153,8 +158,7 @@ void boost_stop(system_error_t error) {
             break;
     }
     led_strip_refresh(led_strip);
-
-} 
+}
 
 void rcfilter_init(void){
     // TIMER Definition
@@ -207,13 +211,13 @@ void rcfilter_init(void){
 
 
 void set_pwm_duty_cycle(uint32_t duty_cycle){
-    if (duty_cycle > 38){   //límite a 1,24
-        duty_cycle= 38;
-    }
-    esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
-    if (ret != ESP_OK) {
-        ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);
-    }
+    // if (duty_cycle > 38){   //límite a 1,24
+    //     duty_cycle= 38;
+    // }
+    // esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);
+    // }
   }  
 
 
@@ -234,8 +238,8 @@ static void boost_start_up(void *pvParameters) {
     float current_duty = 38.0f;
     float target_duty = (float)saved_duty;
     
-    // ramp, 50 steps, 5 ms each
-    const int steps = 50; 
+    // ramp, 10 steps, 5 ms each
+    const int steps = 10; 
     float step_size = (current_duty - target_duty) / steps;
 
     for (int i = 0; i < steps; i++) {
@@ -253,14 +257,13 @@ static void boost_start_up(void *pvParameters) {
 esp_err_t mcp4725_init_safe_start(void) {
     // Arrays para iterar sobre ambos DACs sin duplicar código
     const uint8_t addresses[2] = {MCP4725_ADDR_A, MCP4725_ADDR_B};
-    // const char channels[2] = {'A', 'B'};
-    const char channels[2] = {'A'};
+    const char channels[2] = {'A', 'B'};
     ESP_LOGI("SAFETY", "Iniciando secuencia de verificación Zero-Start para DACs...");
 
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < 2; i++) {
         uint8_t data_rx[5] = {0};
         
-        // 1. Lectura del estado actual
+        // Read current value
         esp_err_t err = i2c_master_read_from_device(I2C_MASTER_NUM, addresses[i], data_rx, 5, pdMS_TO_TICKS(10));
         if (err != ESP_OK) {
             ESP_LOGE("SAFETY", "Fallo I2C en DAC %c durante inicio: %s", channels[i], esp_err_to_name(err));
@@ -269,7 +272,7 @@ esp_err_t mcp4725_init_safe_start(void) {
 
         uint16_t current_eeprom = ((data_rx[3] & 0x0F) << 8) | data_rx[4];
 
-        // 2. Verificación y Corrección
+        // Correction
         if (current_eeprom != 0) {
             ESP_LOGW("SAFETY", "DAC %c tiene EEPROM = %d. Forzando hardware a 0V...", channels[i], current_eeprom);
             

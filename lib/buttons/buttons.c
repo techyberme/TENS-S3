@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "buzzer.h"
 #include "tensOS.h" 
+#include "hbridge_driver.h"
 #include "settings.h"
 
 static const char *TAG = "BUTTONS";
@@ -16,7 +17,10 @@ extern volatile int program;
 extern volatile uint32_t duration_session;
 extern volatile SystemState_t current_state; 
 
-
+volatile uint32_t doc_setup_freq = 2000;
+volatile uint32_t doc_setup_dt = 50;
+volatile uint8_t  doc_setup_mode = 0;
+volatile uint32_t doc_setup_burst = 100;
 static button_state_t lock_state = UNLOCKED_STATE_A;
 static uint32_t hold_counter = 0;
 static uint32_t inactivity_counter = 0;
@@ -33,6 +37,18 @@ void buttons_init(void) {
         .intr_type = GPIO_INTR_DISABLE
     };
     gpio_config(&io_conf);
+}
+void write_new_config(){
+    doctor_data_t nueva_config = {
+        .doctor= true,
+        .duration = duration_session,
+        .frequency = doc_setup_freq,
+        .deadtime = 50, //50 for now
+        .mode = doc_setup_mode,
+        .burst_hz = doc_setup_burst
+        };
+        write_doctor(&nueva_config);
+        ESP_LOGI(TAG,"PROGRAMA PERSONALIZADO GUARDADO");
 }
 
 void buttons_task(void *pvParameters) {
@@ -77,13 +93,15 @@ void buttons_task(void *pvParameters) {
         case STATE_PROGRAM:
             if (up_trigger) {
                     program += 1;
-                    if (program > 5) program = 5;     
+                    if (program > 3) program = 3;     
                     beep(50);
                 } else if (down_trigger) {
                     program -= 1;
                     if (program < 1) program = 1;    
                     beep(50);
                 } else if (ok_trigger) {
+                    const tens_program_t *selected_prog = &PROGRAM_DATABASE[program - 1];
+                    hbridge_init(selected_prog);
                     current_state = STATE_FUNC;
                     beep(50);
                 }
@@ -95,14 +113,13 @@ void buttons_task(void *pvParameters) {
                             lock_state = UNLOCKING_STATE;
                             hold_counter = 0;
                         }
-                        break;
                         if (down_pressed) {
-                            lock_state = DOCTOR_STATE;
+                            lock_state = DOCTOR_HOLD_STATE;
                             hold_counter = 0;
                         }
                         break;
 
-                    case DOCTOR_STATE:
+                    case DOCTOR_HOLD_STATE:
                         if (down_pressed) {
                             hold_counter++;
                             if (hold_counter >= 250) { // 5 seconds hold
@@ -110,26 +127,24 @@ void buttons_task(void *pvParameters) {
                                 //check if doctor mode is already set.
                                 doctor_data_t doctor_data = read_doctor();
                                 if (!doctor_data.doctor) {
-                                    doctor_data_t doctor_set = {
-                                    .doctor = true,
-                                    .program = program,
-                                    .duration = duration_session
-                                    };
-                                    write_doctor(doctor_set.doctor, doctor_set.program, doctor_set.duration);
-                                    ESP_LOGI(TAG, "Doctor mode set");
-                                    lock_state = LOCKED_STATE;
+                                    //if inactive
+                                    lock_state = UNLOCKED_STATE_A; 
+                                    current_state = STATE_DOCTOR_INIT;
                                 }
                                 //if doctor is set, go back to regular mode. Go back to time configuration.
                                 else{
-                                    write_doctor(false, 0, 0); //reset doctor mode
+                                    doctor_data_t out = {0};
+                                    write_doctor(&out); //reset doctor mode
                                     ESP_LOGI(TAG, "Doctor mode reset");
-                                    lock_state = STATE_TIME;
+                                    lock_state = UNLOCKED_STATE_A; 
+                                    current_state = STATE_TIME;
                                 }
-                                
+                                hold_counter = 0;
                             }
                         }
                         else lock_state = LOCKED_STATE;  
                             break;
+                    
                     case UNLOCKING_STATE:
                         if (ok_pressed) {
                             hold_counter++;
@@ -199,9 +214,64 @@ void buttons_task(void *pvParameters) {
 
                     }
                     break;
+        case DOCTOR_CFG_FREQ:
+            // Lógica de botones para modificar la frecuencia (ej: de 100 en 100 Hz)
+            if (up_trigger){
+                doc_setup_freq += 100;
+                if (doc_setup_freq > 6000) doc_setup_freq  = 6000;     
+                    beep(50);
+            }  
+            if (down_trigger){
+                doc_setup_freq -= 100;
+                if (doc_setup_freq < 2000) doc_setup_freq  = 2000;     
+                    beep(50);
+            }  
+            
+            if (ok_pressed) {
+                beep(50);
+                current_state = DOCTOR_CFG_MODE; 
+            }
+            break;
+        case DOCTOR_CFG_MODE:
+                // Conmutar entre 0 (Continuo) y 1 (Burst)
+                if (up_trigger || down_trigger) {
+                    doc_setup_mode = !doc_setup_mode;
+                }
+                
+                if (ok_trigger) {
+                    beep(50);
+                    if (doc_setup_mode == 1) {
+                        current_state = DOCTOR_CFG_BURST_HZ; // If burst, define period
+                    } else {
+                        // Si es continuo, el periodo de ráfaga es 0, terminamos y guardamos el BLOB completo
+                        doc_setup_burst = 0;
+                        write_new_config();
+                        current_state = STATE_TIME;
+                    }
+                }
+                break;
+        case DOCTOR_CFG_BURST_HZ:
+            if (up_trigger){
+                    doc_setup_burst  += 50;
+                    if (doc_setup_burst  > 200) doc_setup_burst   = 200;     
+                        beep(50);
+                }  
+                if (down_trigger){
+                    doc_setup_burst  -= 50;
+                    if (doc_setup_burst  < 50 ) doc_setup_burst   = 50;     
+                        beep(50);
+                }  
+
+            if (ok_trigger) {
+                beep(50);
+                write_new_config();
+                current_state = STATE_TIME;
+            }
+            break;
         default:
             break;
         }
         
     }
+
 }

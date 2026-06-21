@@ -13,13 +13,23 @@
 
 typedef enum {
     TENS_MODE_CONTINUO, // 4 kHz c 
-    TENS_MODE_BURST,      // 4 kHz modulated at 100 Hz
-    TENS_MODE_OFF         
+    TENS_MODE_BURST,      // 4 kHz modulated at 100 Hz       
 } tens_mode_t;
 
+typedef struct {
+    uint32_t frequency_hz;      
+    uint32_t deadtime_ticks;   
+    tens_mode_t mode;           
+    uint32_t burst_hz;   
+} tens_program_t;
+extern const tens_program_t PROGRAM_DATABASE[];
 
-void hbridge_init(uint32_t deadtime_ticks);
+void hbridge_init(const tens_program_t *prog);
 
+/*
+    Erase all handlers and stop the timer.
+*/
+void hbridge_deinit(void);
 void hbridge_stop(char channel);
 
 void hbridge_start(char channel);

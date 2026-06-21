@@ -39,7 +39,12 @@ typedef enum {
     STATE_FUNC,             // Main State
     STATE_DONE,
     STATE_LOW_BATTERY,
-    STATE_ERROR          
+    STATE_ERROR,
+    STATE_DOCTOR_INIT,      //Doctor Mode Initialization
+    DOCTOR_CFG_FREQ,         // Frequency
+    DOCTOR_CFG_DEADTIME,     // Deadtime, not available for now
+    DOCTOR_CFG_MODE,         // Contin-Burst
+    DOCTOR_CFG_BURST_HZ      //Burst Frequency
 } SystemState_t;
 
 /**

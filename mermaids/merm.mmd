@@ -1,0 +1,16 @@
+stateDiagram-v2
+    direction LR
+    [*] --> STATE_TIME : Encendido
+    
+    STATE_TIME --> STATE_LOW_BATTERY : Batería < 20%
+    STATE_TIME --> STATE_PROGRAM : Duración Escogida
+    STATE_PROGRAM --> STATE_FUNC : Programa Escogido
+    STATE_TIME --> STATE_FUNC : Función Doctor Activada
+    
+    STATE_FUNC --> STATE_DONE : Programa finalizado
+    STATE_DONE --> STATE_TIME : Reset 
+    
+    STATE_FUNC --> STATE_ERROR : Hardware Fault
+    
+    STATE_LOW_BATTERY --> [*] : Suspend Task
+    STATE_ERROR --> [*] : Suspend Task

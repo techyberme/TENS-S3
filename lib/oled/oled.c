@@ -7,16 +7,22 @@
 #include "tensOS.h"
 #include "buttons.h"
 
-static ui_state_t current_state = SCREEN_LOGO;
-
+static volatile ui_state_t current_state = SCREEN_LOGO;
+static void draw_doctor_init(void); 
+static void draw_doctor_freq(void);
+static void draw_doctor_mode(void);
+static void draw_doctor_burst(void);
 
 static const char* TAG = "OLED";
 static u8g2_t u8g2;
 extern uint32_t time_session;
 volatile extern uint32_t duration_session;
-extern int program;
+volatile extern int program;
 extern TensChannel_t ch_A;
 extern TensChannel_t ch_B;
+volatile extern uint32_t doc_setup_freq;
+volatile extern uint8_t  doc_setup_mode;
+volatile extern uint32_t doc_setup_burst;
 const unsigned char logo[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -122,7 +128,7 @@ void display_init(void) {
     }
 void display_show_logo(void) {
     u8g2_ClearBuffer(&u8g2);
-    u8g2_DrawXBM(&u8g2, 35, 0, 64, 64, logo);
+    u8g2_DrawXBM(&u8g2, 50, 0, 64, 64, logo);
     u8g2_SetFont(&u8g2, u8g2_font_6x10_tf);
     u8g2_DrawStr(&u8g2, 15, 62, "STARTING TENS...");
     u8g2_SendBuffer(&u8g2);
@@ -149,16 +155,20 @@ static void draw_time_screen() {
 
     // Central Tag
     u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
-    u8g2_DrawStr(&u8g2, 15, 30, "Tiempo");
+    const char* tag_text = "Tiempo";
+    int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    if ((now / 400) % 2 == 0){
+    if ((now / 500) % 2 == 0){
         // Valor de los minutos (Grande)
         int mins = duration_session;
         int secs = 0;
         u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr);
-        sprintf(buf, "%02d:%02d", mins, secs);
-        u8g2_DrawStr(&u8g2, 30, 58, buf);  
+        snprintf(buf, sizeof(buf), "%02d:%02d", mins, secs);
+        int text_width = u8g2_GetStrWidth(&u8g2, buf);
+        int x_centered = (128 - text_width) / 2;
+        u8g2_DrawStr(&u8g2, x_centered, 58, buf);
         }
 
     // Guía para el usuario en la parte inferior
@@ -167,7 +177,7 @@ static void draw_time_screen() {
     
     u8g2_SendBuffer(&u8g2);
 }
-
+//static to make them private
 static void draw_config_prog() {
     char buf[16];
     
@@ -180,13 +190,48 @@ static void draw_config_prog() {
 
     // Central Tag
     u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
-    u8g2_DrawStr(&u8g2, 15, 30, "Programa");
+    const char* tag_text = "Programa";
+    int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
     if ((now / 500) % 2 == 0){
         // Valor de los minutos (Grande)
         u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
-        sprintf(buf, "%02d", program);
+        snprintf(buf, sizeof(buf), "%02d", program);
+        
+        int text_width = u8g2_GetStrWidth(&u8g2, buf);
+        int x_centered = (128 - text_width) / 2;
+        
+        u8g2_DrawStr(&u8g2, x_centered, 58, buf);
+        }
+
+    // Guía para el usuario en la parte inferior
+    u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
+    u8g2_DrawStr(&u8g2, 0, 64, "[-]                   [+]");
+    
+    u8g2_SendBuffer(&u8g2);
+}
+
+static void draw_doctor_freq(){
+    char buf[16];
+    
+    u8g2_ClearBuffer(&u8g2);
+    
+    // Title
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr);
+    u8g2_DrawStr(&u8g2, 0, 10, "MODO DOCTOR");
+    u8g2_DrawHLine(&u8g2, 0, 12, 128);
+
+    u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
+    const char* tag_text = "Frecuencia";
+    int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    //Blinking
+    if ((now / 250) % 2 == 0){
+        u8g2_SetFont(&u8g2, u8g2_font_helvB14_tr);
+        sprintf(buf, "%lu Hz", doc_setup_freq);
         u8g2_DrawStr(&u8g2, 30, 58, buf);  
         }
 
@@ -196,6 +241,72 @@ static void draw_config_prog() {
     
     u8g2_SendBuffer(&u8g2);
 }
+static void draw_doctor_mode(){
+        char buf[16];
+    
+    u8g2_ClearBuffer(&u8g2);
+    
+    // Title
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr);
+    u8g2_DrawStr(&u8g2, 0, 10, "MODO DOCTOR");
+    u8g2_DrawHLine(&u8g2, 0, 12, 128);
+
+    // Central Tag
+    u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
+    const char* tag_text = "Modo";
+    int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    //Blinking
+    if ((now / 250) % 2 == 0){
+        // Valor de los minutos (Grande)
+        u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr);
+        if (doc_setup_mode == 1) sprintf(buf, "%s", "BURST");
+        else sprintf(buf, "%s", "NORMAL");
+        int text_width = u8g2_GetStrWidth(&u8g2, buf);
+        int x_centered = (128 - text_width) / 2;
+        
+        u8g2_DrawStr(&u8g2, x_centered, 58, buf); 
+        }
+        
+
+    // Guía para el usuario en la parte inferior
+    u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
+    u8g2_DrawStr(&u8g2, 0, 64, "[-]                   [+]");
+    
+    u8g2_SendBuffer(&u8g2);
+}
+static void draw_doctor_burst(){
+        char buf[16];
+    
+    u8g2_ClearBuffer(&u8g2);
+    
+    // Title
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr);
+    u8g2_DrawStr(&u8g2, 0, 10, "MODO DOCTOR");
+    u8g2_DrawHLine(&u8g2, 0, 12, 128);
+
+    u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
+    const char* tag_text = "Frec. BURST";
+    int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    //Blinking
+    if ((now / 250) % 2 == 0){
+        // Valor de los minutos (Grande)
+        u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr);
+        sprintf(buf, "%lu Hz", doc_setup_burst);
+        u8g2_DrawStr(&u8g2, 30, 58, buf);  
+        }
+
+    // Guía para el usuario en la parte inferior
+    u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
+    u8g2_DrawStr(&u8g2, 0, 64, "[-]                   [+]");
+    
+    u8g2_SendBuffer(&u8g2);
+    
+}
+
 static void draw_main_ui()
 {
     u8g2_ClearBuffer(&u8g2);
@@ -212,7 +323,7 @@ static void draw_main_ui()
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
     if (button_state == UNLOCKED_STATE_A){
-        if ((now / 500) % 2 == 0){
+        if ((now / 250) % 2 == 0){
          // Level A
         sprintf(buf, "%d",ch_A.level);
         u8g2_DrawStr(&u8g2, 15, 42, buf);  
@@ -224,7 +335,7 @@ static void draw_main_ui()
     u8g2_DrawStr(&u8g2, 15, 42, buf);
     }
     if (button_state == UNLOCKED_STATE_B){
-        if ((now / 500) % 2 == 0){
+        if ((now / 250) % 2 == 0){
          // Level B
         sprintf(buf, "%d",ch_B.level);
         u8g2_DrawStr(&u8g2, 85, 42, buf); 
@@ -254,7 +365,7 @@ static void draw_main_ui()
 
      u8g2_SendBuffer(&u8g2);
 }
-    static void display_task(void *pvParameters) {
+static void display_task(void *pvParameters) {
     while (1) {
             switch(current_state){
                 case SCREEN_LOGO:
@@ -272,7 +383,19 @@ static void draw_main_ui()
                     //TODO
                     break;  
                 case SCREEN_BATTERY:
-                    break;              
+                    break; 
+                case SCREEN_DOCTOR_MODE:
+                    draw_doctor_mode();
+                    break;
+                case SCREEN_DOCTOR_FREQ:
+                    draw_doctor_freq();
+                    break;
+                case SCREEN_DOCTOR_BURST_HZ:
+                    draw_doctor_burst();
+                    break;
+                case SCREEN_DOCTOR_INIT:
+                    draw_doctor_init();
+                    break;
             }
         vTaskDelay(pdMS_TO_TICKS(100)); // Esperar 1 segundo exacto
     }
@@ -288,16 +411,14 @@ void display_low_battery_warning() {
     u8g2_ClearBuffer(&u8g2);
 
     // open_iconic_all_4x
-     u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
     u8g2_DrawGlyph(&u8g2, 48, 35, 64); 
-
-    // 2. Configurar texto "BATERÍA"
+ 
     u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); // Fuente compacta para el título
     const char* str1 = "BATERIA";
     int width1 = u8g2_GetStrWidth(&u8g2, str1);
     u8g2_DrawStr(&u8g2, (128 - width1) / 2, 50, str1);
 
-    // 3. Configurar texto "BAJA" en negrita/grande
     u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
     const char* str2 = "BAJA";
     int width2 = u8g2_GetStrWidth(&u8g2, str2);
@@ -320,6 +441,23 @@ void display_charge_shutdown_warning() {
     // 3. Configurar texto de acción en negrita/grande
     u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
     const char* str2 = "APAGANDO..."; // ~99 píxeles de ancho (entra en los 128)
+    int width2 = u8g2_GetStrWidth(&u8g2, str2);
+    u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
+
+    u8g2_SendBuffer(&u8g2);
+}
+
+static void draw_doctor_init() {
+    u8g2_ClearBuffer(&u8g2);
+
+    // open_iconic_all_4x
+    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_DrawGlyph(&u8g2, 48, 35, 72); 
+
+
+
+    u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
+    const char* str2 = "MODO DOCTOR!"; //
     int width2 = u8g2_GetStrWidth(&u8g2, str2);
     u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
 

@@ -16,14 +16,14 @@ static const char *TAG = "CONTROL_LOGIC";
 volatile SystemState_t current_state = STATE_TIME;
 extern float batt_percentage;
 SystemState_t last_state = STATE_ZERO;
-float max_ma = 50.0f; //valor inicial
-volatile int program =1;
+uint32_t doctor_timer_ms = 0;
+volatile int program = 1;
 static int recovery_level = RECOVER_LEVEL; 
 //Enable boost
 static bool EN_PWR = false;
 uint32_t io_num;
 volatile uint32_t time_session= 0;
-volatile uint32_t duration_session= SESSION_DURATION;
+volatile uint32_t duration_session = SESSION_DURATION;
 volatile TensChannel_t ch_A = { .id = 'A', .level = 0, .current = 0.0f };
 volatile TensChannel_t ch_B = { .id = 'B', .level = 0, .current = 0.0f };
 SystemState_t get_system_state(void) {
@@ -42,9 +42,9 @@ void watchdog_init(void) {
 
 void os_control_task(void *pvParameters) {
     // 1. Asegurar estado inicial seguro
-    boost_enable(false); 
-    set_DAC_value(0, 'A');
-    set_DAC_value(0, 'B');
+    //boost_enable(false); 
+    // set_DAC_value(0, 'A');
+    // set_DAC_value(0, 'B');
     current_state = STATE_TIME;
     TickType_t xLastWakeTime = xTaskGetTickCount(); //Inicializo, después la tarea se encarga de actualizarla
     const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50 Hz exactos
@@ -55,20 +55,45 @@ void os_control_task(void *pvParameters) {
     while(1) {         
         vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
         //Watchdog
-        wdi_cycle_counter++;
-        if (wdi_cycle_counter >= 25) { //Every 500 ms
-            wdi_current_state = !wdi_current_state; // Invert state
-            gpio_set_level(WDI_GPIO, wdi_current_state);
-            wdi_cycle_counter = 0;
-        }
+        // wdi_cycle_counter++;
+        // if (wdi_cycle_counter >= 25) { //Every 500 ms
+        //     wdi_current_state = !wdi_current_state; // Invert state
+        //     gpio_set_level(WDI_GPIO, wdi_current_state);
+        //     wdi_cycle_counter = 0;
+        // }
         //Actions carried on just once the state changes
         if (current_state != last_state) {
             ESP_LOGI(TAG, "Transición de estado: %d -> %d", last_state, current_state);
             
             if (current_state == STATE_TIME) {
+                doctor_data_t doctor_data = read_doctor();
+                // --- DEBUG NVS DUMP ---
+                ESP_LOGI(TAG, "--- LEYENDO NVS (DOC_KEY) ---");
+                ESP_LOGI(TAG, "Estado Doctor:  %d", doctor_data.doctor);
+                ESP_LOGI(TAG, "Duracion (min): %d", doctor_data.duration);
+                ESP_LOGI(TAG, "Frecuencia:     %lu Hz", (unsigned long)doctor_data.frequency);
+                ESP_LOGI(TAG, "Burst Freq:     %lu Hz", (unsigned long)doctor_data.burst_hz);
+                ESP_LOGI(TAG, "Deadtime:       %lu ticks", (unsigned long)doctor_data.deadtime);
+                ESP_LOGI(TAG, "Modo de Onda:   %d", doctor_data.mode);
+                ESP_LOGI(TAG, "-----------------------------");
+                // ----------------------
+                if (doctor_data.doctor) {
+                    ESP_LOGI(TAG, "Doctor mode is on");
+                    duration_session = doctor_data.duration;
+                    program = 4;
+                    tens_program_t program_doctor;
+                    program_doctor.burst_hz= doctor_data.burst_hz;
+                    program_doctor.frequency_hz = doctor_data.frequency;
+                    program_doctor.deadtime_ticks = doctor_data.deadtime;
+                    program_doctor.mode = doctor_data.mode;
+                    hbridge_init(&program_doctor);
+                    current_state = STATE_FUNC;
+                    beep(50);
+                }
+                ESP_LOGI(TAG, "displaying first screen");
                 display_set_state(SCREEN_CONFIG_TIME);
                 time_session = 0;
-                if (batt_percentage < 20) current_state = STATE_LOW_BATTERY;
+                //if (batt_percentage < 20) current_state = STATE_LOW_BATTERY;
             }
             if (current_state == STATE_PROGRAM) {
                 display_set_state(SCREEN_CONFIG_PROG);
@@ -80,24 +105,31 @@ void os_control_task(void *pvParameters) {
             if (current_state == STATE_LOW_BATTERY) {
                 display_set_state(SCREEN_BATTERY);
             }  
+            if (current_state == DOCTOR_CFG_FREQ) {
+                display_set_state(SCREEN_DOCTOR_FREQ);
+             } 
+            if (current_state == DOCTOR_CFG_MODE) {
+                display_set_state(SCREEN_DOCTOR_MODE);
+             } 
+             if (current_state == DOCTOR_CFG_BURST_HZ) {
+                display_set_state(SCREEN_DOCTOR_BURST_HZ);
+             } 
+             
+             if (current_state == STATE_DOCTOR_INIT) {
+                display_set_state(SCREEN_DOCTOR_INIT);
+                doctor_timer_ms = 0;
+             } 
             last_state = current_state; // Actualizar para no repetir
         }
         switch (current_state) {
             case STATE_TIME:
-                doctor_data_t doctor_data = read_doctor();
-                if (doctor_data.doctor) {
-                    duration_session = doctor_data.duration;
-                    program = doctor_data.program;
-                    current_state = STATE_FUNC;
-                    beep(50);
-                }
-
                 break;
             case STATE_PROGRAM:
                 break;
 
             // Dentro de boost_control_task...
             case STATE_FUNC:
+
                 // Use of pointers to easily iterate
                 volatile TensChannel_t* channels[2] = {&ch_A, &ch_B};
                 if (ch_A.level == 0 && ch_B.level == 0) {
@@ -115,9 +147,9 @@ void os_control_task(void *pvParameters) {
                     volatile TensChannel_t* other_ch = channels[i ^ 1];
                     if (ch->status == CHAN_RUNNING){
                         if (ch->level == 0) {
-                            hbridge_stop(ch->id);
+                            //hbridge_stop(ch->id);
                         } else if (ch->applied_level == 0 && ch->level > 0) {
-                            hbridge_start(ch->id); 
+                            //hbridge_start(ch->id); 
                         }
                         if (ch->silence) {
                             ch->low_current_cnt = 0;
@@ -148,7 +180,7 @@ void os_control_task(void *pvParameters) {
                             ch->low_current_cnt++;
                             if (ch->low_current_cnt > 5) {
                                 set_DAC_value(0, ch->id);
-                                hbridge_stop(ch->id);                                
+                                //hbridge_stop(ch->id);                                
                                 ESP_LOGW(TAG, "Electrodos desconectados en canal %c", ch->id);
                                 
                                 ch->saved_level = ch->level;
@@ -176,14 +208,13 @@ void os_control_task(void *pvParameters) {
                             ch->recovery_counter++;
                         } else {
                             ch->recovery_counter = 0;
-                            set_DAC_value(0, ch->id); // Apagar pulso
+                            set_DAC_value(0, ch->id); //stop pulse
                             ch->pulse_active = false;
                         }
                     
                         if (ch->recovery_counter >= 3) {
                             ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
-                            // IMPORTANTE: No vuelvo de golpe a la corriente anterior.
-                            ch->level= recovery_level;  //vuelvo al valor mínimo
+                            ch->level= recovery_level;  //recovery level
                             set_DAC_value(ch->level,ch->id);
                             ch->status = CHAN_RECOVER; 
                             ch->recovery_counter = 0;
@@ -223,14 +254,22 @@ void os_control_task(void *pvParameters) {
                 buzzer_alarm();
                 boost_stop(WARN_DONE);
                 ESP_LOGI(TAG, "Programa completado");
-                vTaskSuspend(NULL); // Bloquea la tarea por seguridad
+                current_state = STATE_TIME; 
                 break;
             case STATE_LOW_BATTERY:
-                vTaskSuspend(NULL); // Bloquea la tarea por seguridad
+                vTaskSuspend(NULL); // Block task 
                 break;
             case STATE_ERROR:
                 boost_stop(ERR_IMPEDANCE_HIGH);
-                vTaskSuspend(NULL); // Bloquea la tarea por seguridad
+                vTaskSuspend(NULL); 
+                break;
+            case STATE_DOCTOR_INIT:
+                doctor_timer_ms += 20; 
+                
+                // Si ya pasaron 2000 ms (2 segundos), avanzamos automáticamente
+                if (doctor_timer_ms >= 2000) {
+                    current_state = DOCTOR_CFG_FREQ; 
+                }
                 break;
 
             default:

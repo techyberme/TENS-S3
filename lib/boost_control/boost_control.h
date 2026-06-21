@@ -27,9 +27,9 @@ typedef enum {
     ERR_OPEN_CIRCUIT,   // Electrodos sueltos
     ERR_EFFICIENCY_LOW,  // Saturación del sistema
     WARN_DONE,
-    ERR_IMPEDANCE_HIGH,  // Límite de DAC alcanzado sin llegar a 20mA
+    WARN_OPEN_CIRCUIT, 
     ERR_CHARGE, 
-} system_error_t;
+} system_state_t;
 
 /**
  * @brief Converter, DAC & LED initialization
@@ -42,7 +42,7 @@ void boost_enable(bool enable);
 /**
  * @brief Emergency Stop
  */
-void boost_stop(system_error_t error);
+void boost_stop(system_state_t error);
 
 void rcfilter_init(void);
 /**
@@ -56,5 +56,6 @@ void set_pwm_duty_cycle(uint32_t duty_cycle);
  */
 void update_voltage(void);
 
+void update_led(system_state_t);
 esp_err_t mcp4725_init_safe_start(void);
 #endif
