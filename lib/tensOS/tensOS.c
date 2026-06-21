@@ -13,10 +13,11 @@
 #include "settings.h"
 #define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
-volatile SystemState_t current_state = STATE_TIME;
+volatile SystemState_t current_state = STATE_INIT;
 extern float batt_percentage;
 SystemState_t last_state = STATE_ZERO;
-uint32_t doctor_timer_ms = 0;
+uint32_t doctor_timer = 0;
+uint32_t disconnected_timer = 0;
 volatile int program = 1;
 static int recovery_level = RECOVER_LEVEL; 
 //Enable boost
@@ -41,11 +42,7 @@ void watchdog_init(void) {
 }
 
 void os_control_task(void *pvParameters) {
-    // 1. Asegurar estado inicial seguro
-    //boost_enable(false); 
-    // set_DAC_value(0, 'A');
-    // set_DAC_value(0, 'B');
-    current_state = STATE_TIME;
+    current_state = STATE_INIT;
     TickType_t xLastWakeTime = xTaskGetTickCount(); //Inicializo, después la tarea se encarga de actualizarla
     const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50 Hz exactos
     //Watchdog variables
@@ -64,7 +61,17 @@ void os_control_task(void *pvParameters) {
         //Actions carried on just once the state changes
         if (current_state != last_state) {
             ESP_LOGI(TAG, "Transición de estado: %d -> %d", last_state, current_state);
-            
+            if (current_state == STATE_INIT) {
+                //clean stuff
+                volatile TensChannel_t* channels[2] = {&ch_A, &ch_B};
+                for (int i = 0; i < 2; i++) {
+                    *channels[i] = (TensChannel_t){0};
+                }
+                //boost_enable(false); 
+                // set_DAC_value(0, 'A');
+                // set_DAC_value(0, 'B');
+                display_set_state(SCREEN_INIT);
+            }  
             if (current_state == STATE_TIME) {
                 doctor_data_t doctor_data = read_doctor();
                 // --- DEBUG NVS DUMP ---
@@ -117,11 +124,13 @@ void os_control_task(void *pvParameters) {
              
              if (current_state == STATE_DOCTOR_INIT) {
                 display_set_state(SCREEN_DOCTOR_INIT);
-                doctor_timer_ms = 0;
+                doctor_timer = 0;
              } 
             last_state = current_state; // Actualizar para no repetir
         }
         switch (current_state) {
+            case STATE_INIT:
+                break;
             case STATE_TIME:
                 break;
             case STATE_PROGRAM:
@@ -201,11 +210,13 @@ void os_control_task(void *pvParameters) {
                             set_DAC_value(recovery_level, ch->id); // Initiate a 6 mA pulse to check for contact
                             ch->pulse_active = true;
                             ch->last_poll_time = current_time;
+                            disconnected_timer++;
                         }
                     } else {
                         // 20 ms after the pulse starts, check the current
                         if (ch->current > 1.0f) {
                             ch->recovery_counter++;
+                            disconnected_timer = 0;
                         } else {
                             ch->recovery_counter = 0;
                             set_DAC_value(0, ch->id); //stop pulse
@@ -220,6 +231,10 @@ void os_control_task(void *pvParameters) {
                             ch->recovery_counter = 0;
                             ch->pulse_active = false;
                         }
+                    }
+                    if (disconnected_timer >= 60){ //after 30 seconds
+                        boost_stop(ERR_OPEN_CIRCUIT);
+                        current_state = STATE_INIT;
                     }
                 }
                     else if (ch->status == CHAN_RECOVER){
@@ -254,20 +269,20 @@ void os_control_task(void *pvParameters) {
                 buzzer_alarm();
                 boost_stop(WARN_DONE);
                 ESP_LOGI(TAG, "Programa completado");
-                current_state = STATE_TIME; 
+                current_state = STATE_INIT; 
                 break;
             case STATE_LOW_BATTERY:
                 vTaskSuspend(NULL); // Block task 
                 break;
             case STATE_ERROR:
-                boost_stop(ERR_IMPEDANCE_HIGH);
+                boost_stop(ERROR);
                 vTaskSuspend(NULL); 
                 break;
             case STATE_DOCTOR_INIT:
-                doctor_timer_ms += 20; 
+                doctor_timer += 20; 
                 
-                // Si ya pasaron 2000 ms (2 segundos), avanzamos automáticamente
-                if (doctor_timer_ms >= 2000) {
+                //show Doctor's intro screen for 2 seconds
+                if (doctor_timer >= 2000) {
                     current_state = DOCTOR_CFG_FREQ; 
                 }
                 break;

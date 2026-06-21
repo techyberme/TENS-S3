@@ -2,6 +2,7 @@
 #define OLED_H
 typedef enum {
     SCREEN_LOGO,
+    SCREEN_INIT,
     SCREEN_CONFIG_TIME,
     SCREEN_CONFIG_PROG,
     SCREEN_RUNNING,

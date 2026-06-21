@@ -25,7 +25,7 @@ typedef enum {
     ERR_OVERCURRENT,    // > 80mA 
     ERR_OVERVOLTAGE,    // > V 40en colector (Hardware)
     ERR_OPEN_CIRCUIT,   // Electrodos sueltos
-    ERR_EFFICIENCY_LOW,  // Saturación del sistema
+    ERROR, 
     WARN_DONE,
     WARN_OPEN_CIRCUIT, 
     ERR_CHARGE, 

@@ -137,6 +137,10 @@ void boost_stop(system_state_t error) {
 
 void update_led(system_state_t state){
     switch (state) {
+        case ERROR:
+            led_strip_set_pixel(led_strip, 0, 255, 0, 0); // RED
+            ESP_LOGE("SAFETY", "STOP: ERROR GENERAL");
+            break;
         case WARN_OPEN_CIRCUIT:
             led_strip_set_pixel(led_strip, 0, 212, 99, 28); // Naranja 
             ESP_LOGE("SAFETY", "STOP: Impedancia elevada");

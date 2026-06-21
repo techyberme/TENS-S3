@@ -12,6 +12,7 @@ static void draw_doctor_init(void);
 static void draw_doctor_freq(void);
 static void draw_doctor_mode(void);
 static void draw_doctor_burst(void);
+static void draw_init(void);
 
 static const char* TAG = "OLED";
 static u8g2_t u8g2;
@@ -128,11 +129,12 @@ void display_init(void) {
     }
 void display_show_logo(void) {
     u8g2_ClearBuffer(&u8g2);
-    u8g2_DrawXBM(&u8g2, 50, 0, 64, 64, logo);
+    u8g2_DrawXBM(&u8g2, 35, 0, 64, 64, logo);
     u8g2_SetFont(&u8g2, u8g2_font_6x10_tf);
     u8g2_DrawStr(&u8g2, 15, 62, "STARTING TENS...");
     u8g2_SendBuffer(&u8g2);
 }
+
 void display_low_battery(void) {
     u8g2_ClearBuffer(&u8g2);
     u8g2_DrawXBM(&u8g2, 35, 0, 64, 64, battery);
@@ -370,6 +372,9 @@ static void display_task(void *pvParameters) {
             switch(current_state){
                 case SCREEN_LOGO:
                     break;
+                case SCREEN_INIT:
+                    draw_init();
+                    break;
                 case SCREEN_CONFIG_PROG:
                     draw_config_prog();
                     break;
@@ -461,5 +466,18 @@ static void draw_doctor_init() {
     int width2 = u8g2_GetStrWidth(&u8g2, str2);
     u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
 
+    u8g2_SendBuffer(&u8g2);
+}
+
+static void draw_init(void) {
+    char buf[] = "Pulse OK para comenzar";
+    u8g2_ClearBuffer(&u8g2);
+    u8g2_DrawXBM(&u8g2, 32, 0, 64, 64, logo);
+    u8g2_SetFont(&u8g2, u8g2_font_5x8_tf);
+    int text_width = u8g2_GetStrWidth(&u8g2, buf);
+    int x_centered = (128 - text_width) / 2;
+    
+    u8g2_DrawStr(&u8g2, x_centered, 60, buf);
+    
     u8g2_SendBuffer(&u8g2);
 }
