@@ -13,8 +13,8 @@ typedef enum {
     DOCTOR_HOLD_STATE,       // Esperando los 5 segundos de pulsación
 } button_state_t;
 
-#define UP_GPIO  6
-#define DOWN_GPIO 7
+#define UP_GPIO   6            //17
+#define DOWN_GPIO 7          //18
 #define OK_GPIO 9
 #define POLL_RATE_MS       20
 #define UNLOCK_HOLD_TICKS  (2000 / POLL_RATE_MS) // 100 ticks = 2 seconds
@@ -30,4 +30,4 @@ void buttons_task(void *pvParameters);
 void write_new_config();
 button_state_t get_button_state(void);
 
-#endif // BUTTON_UI_H
+#endif // BUTTON_UI_

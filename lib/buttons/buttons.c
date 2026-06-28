@@ -239,7 +239,7 @@ void buttons_task(void *pvParameters) {
                 }
                 break;
             case DOCTOR_CFG_MODE:
-                    // Conmutar entre 0 (Continuo) y 1 (Burst)
+                    // Commute between both modes
                     if (up_trigger || down_trigger) {
                         doc_setup_mode = !doc_setup_mode;
                     }

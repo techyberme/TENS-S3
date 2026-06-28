@@ -14,6 +14,12 @@ typedef struct {
     uint32_t duration;
 } doctor_data_t;
 
+typedef struct {
+    uint8_t n_program;
+    uint8_t duration;
+    uint8_t avg_level_A;
+    uint8_t avg_level_B;
+} stats_t;
 
 
 
@@ -25,4 +31,6 @@ void write_doctor(const doctor_data_t *doctor_data);
 
 doctor_data_t read_doctor(void);
 
+void write_stats(uint8_t n_program, uint8_t duration, uint8_t avg_level_A, uint8_t avg_level_B);
+void export_stats_to_serial(void);
 #endif 

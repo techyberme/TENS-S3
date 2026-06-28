@@ -16,8 +16,12 @@ static const char *TAG = "CONTROL_LOGIC";
 volatile SystemState_t current_state = STATE_INIT;
 extern float batt_percentage;
 SystemState_t last_state = STATE_ZERO;
-uint32_t doctor_timer = 0;
-uint32_t disconnected_timer = 0;
+static uint32_t doctor_timer = 0;
+static uint32_t disconnected_timer = 0;
+static uint32_t acc_timer = 0;
+static uint32_t session_seconds_sampled = 0;
+static uint32_t level_A_accumulator = 0;
+static uint32_t level_B_accumulator = 0;
 volatile int program = 1;
 static int recovery_level = RECOVER_LEVEL; 
 //Enable boost
@@ -64,11 +68,16 @@ void os_control_task(void *pvParameters) {
             if (current_state == STATE_INIT) {
                 //clean stuff
                 volatile TensChannel_t* channels[2] = {&ch_A, &ch_B};
+                //clean everything
                 for (int i = 0; i < 2; i++) {
-                    *channels[i] = (TensChannel_t){0};
+                    channels[i]->level = 0;
+                    channels[i]->applied_level = 0;
+                    channels[i]->current = 0.0f;
+                    channels[i]->low_current_cnt = 0;
+                    channels[i]->status = CHAN_RUNNING; 
                 }
                 //boost_enable(false); 
-                // set_DAC_value(0, 'A');
+                set_DAC_value(0, 'A');
                 // set_DAC_value(0, 'B');
                 display_set_state(SCREEN_INIT);
             }  
@@ -83,7 +92,8 @@ void os_control_task(void *pvParameters) {
                 ESP_LOGI(TAG, "Deadtime:       %lu ticks", (unsigned long)doctor_data.deadtime);
                 ESP_LOGI(TAG, "Modo de Onda:   %d", doctor_data.mode);
                 ESP_LOGI(TAG, "-----------------------------");
-                // ----------------------
+                //print stats
+                export_stats_to_serial(); 
                 if (doctor_data.doctor) {
                     ESP_LOGI(TAG, "Doctor mode is on");
                     duration_session = doctor_data.duration;
@@ -136,7 +146,6 @@ void os_control_task(void *pvParameters) {
             case STATE_PROGRAM:
                 break;
 
-            // Dentro de boost_control_task...
             case STATE_FUNC:
 
                 // Use of pointers to easily iterate
@@ -156,9 +165,10 @@ void os_control_task(void *pvParameters) {
                     volatile TensChannel_t* other_ch = channels[i ^ 1];
                     if (ch->status == CHAN_RUNNING){
                         if (ch->level == 0) {
-                            //hbridge_stop(ch->id);
+                            hbridge_stop(ch->id);
                         } else if (ch->applied_level == 0 && ch->level > 0) {
-                            //hbridge_start(ch->id); 
+                            ESP_LOGI("INIT", "Starting %c", ch->id);
+                            hbridge_start(ch->id); 
                         }
                         if (ch->silence) {
                             ch->low_current_cnt = 0;
@@ -185,19 +195,19 @@ void os_control_task(void *pvParameters) {
                             ch->was_silenced = false;
                         }
 
-                        if (ch->current < 1.0f) {
-                            ch->low_current_cnt++;
-                            if (ch->low_current_cnt > 5) {
-                                set_DAC_value(0, ch->id);
-                                //hbridge_stop(ch->id);                                
-                                ESP_LOGW(TAG, "Electrodos desconectados en canal %c", ch->id);
+                        // if (ch->current < 1.0f) {
+                        //     ch->low_current_cnt++;
+                        //     if (ch->low_current_cnt > 5) {
+                        //         set_DAC_value(0, ch->id);
+                        //         //hbridge_stop(ch->id);                                
+                        //         ESP_LOGW(TAG, "Electrodos desconectados en canal %c", ch->id);
                                 
-                                ch->saved_level = ch->level;
-                                ch->status = CHAN_STBY;
-                            }
-                        } else {
-                            ch->low_current_cnt = 0;
-                        }
+                        //         ch->saved_level = ch->level;
+                        //         ch->status = CHAN_STBY;
+                        //     }
+                        // } else {
+                        //     ch->low_current_cnt = 0;
+                        // }
 
                     }
                 
@@ -232,9 +242,9 @@ void os_control_task(void *pvParameters) {
                             ch->pulse_active = false;
                         }
                     }
-                    if (disconnected_timer >= 60){ //after 30 seconds
+                    if (disconnected_timer >= 30){ //after 30 seconds
                         boost_stop(ERR_OPEN_CIRCUIT);
-                        current_state = STATE_INIT;
+                        current_state = STATE_DONE;
                     }
                 }
                     else if (ch->status == CHAN_RECOVER){
@@ -268,7 +278,22 @@ void os_control_task(void *pvParameters) {
             case STATE_DONE:
                 buzzer_alarm();
                 boost_stop(WARN_DONE);
-                ESP_LOGI(TAG, "Programa completado");
+                uint8_t avg_A = 0;
+                uint8_t avg_B = 0;
+
+                if (session_seconds_sampled > 0) {
+                    avg_A = (uint8_t)(level_A_accumulator / session_seconds_sampled);
+                    avg_B = (uint8_t)(level_B_accumulator / session_seconds_sampled);
+                }
+
+                // save to flash
+                write_stats(program, session_seconds_sampled/60 , avg_A, avg_B);
+
+                // reset accumulators
+                level_A_accumulator = 0;
+                level_B_accumulator = 0;
+                session_seconds_sampled = 0;
+                ESP_LOGI(TAG, "Programa finalizado");
                 current_state = STATE_INIT; 
                 break;
             case STATE_LOW_BATTERY:
@@ -290,6 +315,16 @@ void os_control_task(void *pvParameters) {
             default:
                 break;
 
+        }
+        if (current_state == STATE_FUNC) {
+            acc_timer += 20; 
+            if (acc_timer >= 1000) {
+                //take the info 
+                level_A_accumulator += ch_A.level;
+                level_B_accumulator += ch_B.level;
+                session_seconds_sampled++;
+                acc_timer= 0; // Reiniciamos el cronómetro
+            }
         }
     }
 }

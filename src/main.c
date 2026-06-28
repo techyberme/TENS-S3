@@ -18,12 +18,13 @@ void app_main(void) {
     init_nvs();
     display_init();
     display_show_logo();
-    //boost_init();
+    boost_init();
     buzzer_init();
     buttons_init();
     vTaskDelay(pdMS_TO_TICKS(3000));
     // 3. Lanzar la interfaz y continuar con el resto del sistema
     display_start_ui_task();
+    //charge_task();
     xTaskCreate( 
         os_control_task,    
         "ControlTask",          // Debug TAG

@@ -14,8 +14,8 @@ typedef enum {
     SCREEN_DOCTOR_INIT
 } ui_state_t;
 // Pin Definition
-#define OLED_SDA_PIN 17 //19
-#define OLED_SCL_PIN 18
+#define OLED_SDA_PIN 11//8 //11
+#define OLED_SCL_PIN 10 //18
 
 
 void display_init(void);

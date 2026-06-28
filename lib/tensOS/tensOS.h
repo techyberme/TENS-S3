@@ -33,9 +33,9 @@ typedef struct {
  
 typedef enum {
     STATE_ZERO,
+    STATE_INIT,   
     STATE_TIME,
-    STATE_PROGRAM,
-    STATE_INIT,          
+    STATE_PROGRAM,       
     STATE_FUNC,             // Main State
     STATE_DONE,
     STATE_LOW_BATTERY,

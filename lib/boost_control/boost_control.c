@@ -17,10 +17,10 @@ static uint32_t current_duty= 38;
 static uint32_t saved_duty= 38;
 static mcpwm_cmpr_handle_t eff_comparator = NULL;
 static led_strip_handle_t led_strip;
-static void boost_start_up(void *pvParameters);  
+static TaskHandle_t converter_handle = NULL;
 led_strip_handle_t configure_led(void)
 {
-    // 1. Configuración general del LED
+    // LED Configuration
     led_strip_config_t strip_config = {
         .strip_gpio_num = LED_STRIP_GPIO_PIN,
         .max_leds = LED_STRIP_LED_COUNT,
@@ -31,13 +31,13 @@ led_strip_handle_t configure_led(void)
         }
     };
 
-    // 2. Configuración del backend RMT
+    // RMT backend
     led_strip_rmt_config_t rmt_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = LED_STRIP_RMT_RES_HZ,
         .mem_block_symbols = 0, // Auto
         .flags = {
-            .with_dma = false, // No necesario para 1 solo LED
+            .with_dma = false, // just one led
         }
     };
 
@@ -48,7 +48,7 @@ led_strip_handle_t configure_led(void)
 }
 void boost_init(void) {
     esp_err_t err;
-    // 1. Inicializar bus I2C
+    // I2C bus init
     ESP_LOGE("INIT", "inicializando");
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,    
@@ -117,22 +117,24 @@ void boost_enable(bool enable) {
     gpio_set_level(BOOST_EN_GPIO, !enable); //negative logic
     if (enable){
         set_pwm_duty_cycle(38);  
-        xTaskCreate(boost_start_up, "boost_ramp", 2048, NULL, 5, NULL);
-    }
-    else {
-        // Seguridad crítica: Al apagar el EN, machacamos el PWM a 0
-        set_pwm_duty_cycle(0);
+        xTaskCreate(converter_task, "converter_task", 4096, NULL, 8, &converter_handle);
     }
 }
 
 void boost_stop(system_state_t error) {
     gpio_set_level(BOOST_EN_GPIO, 1); // Flyback off
+    set_pwm_duty_cycle(38); 
+    //Stop converter task
+    if (converter_handle != NULL) {
+        vTaskDelete(converter_handle);
+        converter_handle = NULL;
+        ESP_LOGI("Converter", "Converter task destroyed");
+    }
     set_DAC_value(0, 'A'); // DACS off
     set_DAC_value(0, 'B'); 
     hbridge_stop('A'); // Parada de emergencia del puente H, lo hago después del boost para evitar picos de corriente al cortar el puente H antes que el boost
     hbridge_stop('B');
     update_led(error);
-
 } 
 
 void update_led(system_state_t state){
@@ -215,21 +217,20 @@ void rcfilter_init(void){
 
 
 void set_pwm_duty_cycle(uint32_t duty_cycle){
-    // if (duty_cycle > 38){   //límite a 1,24
-    //     duty_cycle= 38;
-    // }
-    // esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
-    // if (ret != ESP_OK) {
-    //     ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);
-    // }
+    if (duty_cycle > 38){   //límite a 1,24
+        duty_cycle= 38;
+    }
+    esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
+    if (ret != ESP_OK) {
+        ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);
+    }
   }  
 
 
 void update_voltage(void){
     float  margin = (ch_A.voltage < ch_B.voltage) ? ch_A.voltage : ch_B.voltage;
-    //
     if (margin > (V_MARGIN_TARGET + V_MARGIN_BAND)){
-        if (current_duty < 38) current_duty +=1;   //1 volt change
+        if (current_duty < 38) current_duty +=1;   //~1 volt change
     }
     else if (margin > (V_MARGIN_TARGET - V_MARGIN_BAND)){
         if (current_duty>1) current_duty -=1; 
@@ -237,32 +238,28 @@ void update_voltage(void){
     set_pwm_duty_cycle(current_duty);
   }
 
-  // temp task to handle boost start up
-static void boost_start_up(void *pvParameters) {
-    float current_duty = 38.0f;
-    float target_duty = (float)saved_duty;
-    
-    // ramp, 10 steps, 5 ms each
-    const int steps = 10; 
-    float step_size = (current_duty - target_duty) / steps;
-
-    for (int i = 0; i < steps; i++) {
-        current_duty -= step_size;
-        set_pwm_duty_cycle((uint32_t)current_duty);
-        vTaskDelay(pdMS_TO_TICKS(5));
+void converter_task(void *pvParameters){
+    while(1){
+        float  margin = (ch_A.voltage < ch_B.voltage) ? ch_A.voltage : ch_B.voltage;
+        if (margin > (V_MARGIN_TARGET + V_MARGIN_BAND)){
+            if (current_duty < 38) current_duty +=1;   //~1 volt change
+        }
+        else if (margin > (V_MARGIN_TARGET - V_MARGIN_BAND)){
+            if (current_duty>1) current_duty -=1; 
+        }
+        set_pwm_duty_cycle(current_duty);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
     
-    //in case there's a rounding error
-    set_pwm_duty_cycle(saved_duty);
-    
-    // Deletion of task
-    vTaskDelete(NULL); 
-}
+  }
+
+
+
 esp_err_t mcp4725_init_safe_start(void) {
-    // Arrays para iterar sobre ambos DACs sin duplicar código
+    // Array to iterate both DACS
     const uint8_t addresses[2] = {MCP4725_ADDR_A, MCP4725_ADDR_B};
     const char channels[2] = {'A', 'B'};
-    ESP_LOGI("SAFETY", "Iniciando secuencia de verificación Zero-Start para DACs...");
+    ESP_LOGI("SAFETY", "Verifying DACS");
 
     for (int i = 0; i < 2; i++) {
         uint8_t data_rx[5] = {0};
@@ -270,30 +267,30 @@ esp_err_t mcp4725_init_safe_start(void) {
         // Read current value
         esp_err_t err = i2c_master_read_from_device(I2C_MASTER_NUM, addresses[i], data_rx, 5, pdMS_TO_TICKS(10));
         if (err != ESP_OK) {
-            ESP_LOGE("SAFETY", "Fallo I2C en DAC %c durante inicio: %s", channels[i], esp_err_to_name(err));
-            return err; // Aborto inmediato, hardware no responde
+            ESP_LOGE("SAFETY", "Error DAC %c while init: %s", channels[i], esp_err_to_name(err));
+            return err;
         }
 
         uint16_t current_eeprom = ((data_rx[3] & 0x0F) << 8) | data_rx[4];
 
         // Correction
         if (current_eeprom != 0) {
-            ESP_LOGW("SAFETY", "DAC %c tiene EEPROM = %d. Forzando hardware a 0V...", channels[i], current_eeprom);
+            ESP_LOGW("SAFETY", "DAC %c EEPROM = %d. Forcing to 0V...", channels[i], current_eeprom);
             
-            uint8_t data_tx[3] = {0x60, 0x00, 0x00}; // Comando Write DAC + EEPROM a 0
+            uint8_t data_tx[3] = {0x60, 0x00, 0x00}; 
             err = i2c_master_write_to_device(I2C_MASTER_NUM, addresses[i], data_tx, 3, pdMS_TO_TICKS(50));
             
             if (err == ESP_OK) {
-                ESP_LOGI("SAFETY", "EEPROM DAC %c reescrita. Bloqueando 50ms para guardado físico.", channels[i]);
+                //wait to safe
                 vTaskDelay(pdMS_TO_TICKS(50)); 
             } else {
-                ESP_LOGE("SAFETY", "Error crítico al reescribir EEPROM del DAC %c", channels[i]);
-                return err; // Aborto, la memoria está corrupta o el bus falló al escribir
+                ESP_LOGE("SAFETY", "Error writing at DAC %c", channels[i]);
+                return err;
             }
         } else {
-            ESP_LOGI("SAFETY", "DAC %c verificado: Estado seguro (0V).", channels[i]);
+            ESP_LOGI("SAFETY", "DAC %c verified", channels[i]);
         }
     }
     
-    return ESP_OK; // Ambos DACs respondieron y están a 0V garantizado
+    return ESP_OK; 
 }

@@ -95,8 +95,8 @@ void hbridge_init(const tens_program_t *prog)
             .flags.update_cmp_on_tez = true,
         };
         ESP_ERROR_CHECK(mcpwm_new_comparator(operators[i], &compare_config, &comparators[i]));
-        //ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparators[i], timer_period/2));  //50% Duty ratio
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparators[i], 1250));
+        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparators[i], timer_period/2));  //50% Duty ratio
+        //ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(comparators[i], 1250));
     }
     
 
@@ -113,33 +113,33 @@ void hbridge_init(const tens_program_t *prog)
     
     // Generator action
     for (int i=0; i<2; i++){
-    ESP_LOGI(TAG, "Set generator action on timer and compare event");
-    int gen_idx = i * 2;
-    //Timer Event
-    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(generators[gen_idx],
-        MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
-        MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));  //changed to low from high
-    //Comparator Event
-    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(generators[gen_idx],
-        MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
-        comparators[i], MCPWM_GEN_ACTION_LOW)));  //Changed from low to high
-    //deadtime config
-    ESP_LOGI(TAG, "Setup deadtime");
-    mcpwm_dead_time_config_t dt_config = {
-        .posedge_delay_ticks = prog->deadtime_ticks,   //Changed from pos to negative
-        .negedge_delay_ticks = 0
-    };
-    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx], &dt_config));   
+        ESP_LOGI(TAG, "Set generator action on timer and compare event");
+        int gen_idx = i * 2;
+        //Timer Event
+        ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(generators[gen_idx],
+            MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
+            MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));  //changed to low from high
+        //Comparator Event
+        ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(generators[gen_idx],
+            MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, 
+            comparators[i], MCPWM_GEN_ACTION_LOW)));  //Changed from low to high
+        //deadtime config
+        ESP_LOGI(TAG, "Setup deadtime");
+        mcpwm_dead_time_config_t dt_config = {
+            .posedge_delay_ticks = prog->deadtime_ticks,   //Changed from pos to negative
+            .negedge_delay_ticks = 0
+        };
+        ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx], &dt_config));   
 
-    dt_config = (mcpwm_dead_time_config_t) {
-      .posedge_delay_ticks = 0,
-      .negedge_delay_ticks = prog->deadtime_ticks, //Changed from neg to
-      //.negedge_delay_ticks = 50, //Changed from neg to
-      .flags.invert_output = true,
-    };
-    //Deadtime only can be assigned one posedge or negedge for both PWM on the same operator.
-    //Generator 0 controls Generator 1 so we don't need to define gen. 1
-    ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx + 1], &dt_config));  
+        dt_config = (mcpwm_dead_time_config_t) {
+        .posedge_delay_ticks = 0,
+        .negedge_delay_ticks = prog->deadtime_ticks, //Changed from neg to
+        //.negedge_delay_ticks = 50, //Changed from neg to
+        .flags.invert_output = true,
+        };
+        //Deadtime only can be assigned one posedge or negedge for both PWM on the same operator.
+        //Generator 0 controls Generator 1 so we don't need to define gen. 1
+        ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(generators[gen_idx],generators[gen_idx + 1], &dt_config));  
     }
     
     // --- 100 Hz BURST ---
@@ -192,7 +192,8 @@ void hbridge_init(const tens_program_t *prog)
     ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_up,compare_time)); 
 
     // 4. Crear Generador y asignar acciones
-    mcpwm_generator_config_t gen_or_config = {.gen_gpio_num = GPIO_OR};
+    mcpwm_generator_config_t gen_or_config = {.gen_gpio_num = CLAMP_A};
+    //todo CLAMP_B
     ESP_ERROR_CHECK(mcpwm_new_generator(oper_or, &gen_or_config, &gen_or));
 
     // At TEZ (tick 0): Both base signals become 1. NAND(1,1) = 0.
@@ -260,6 +261,7 @@ void hbridge_stop(char channel){
     //mcpwm_timer_start_stop(timer, MCPWM_TIMER_STOP_EMPTY);
 }
 void hbridge_start(char channel){   
+     ESP_LOGI(TAG, "starting");
     //enable A and forcing is turned off
     if (channel == 'A'){
         en_A = true;

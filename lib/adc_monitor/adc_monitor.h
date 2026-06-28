@@ -26,13 +26,6 @@ void process_voltage(uint32_t raw_val, char channel);
  */
 float calc_percentage(int volt);
 
-/**
- * @brief  Removes battery reading
- */
-void remove_battery_from_pattern(void);
-
-void check_charge(void);
-
 void charge_task(void *pvParameters);
 
 #endif

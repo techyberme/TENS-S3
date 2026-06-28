@@ -10,21 +10,21 @@
 #include "hbridge_driver.h"
 #include "buzzer.h"
 #include "settings.h"
-static const char *TAG = "MAIN";
+ 
 
 
 void app_main(void) {
     //module initialization
-    mcp4725_init_safe_start();
     init_nvs();
-    watchdog_init();
-    boost_init(); 
-    rcfilter_init();
-    buttons_init(); // Inicializa los botones
-    adc_monitor_init();
     display_init();
+    display_show_logo();
+    //boost_init();
     buzzer_init();
-    uint32_t last_log_time = 0;
+    buttons_init();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    // 3. Lanzar la interfaz y continuar con el resto del sistema
+    display_start_ui_task();
+    //charge_task();
     xTaskCreate( 
         os_control_task,    
         "ControlTask",          // Debug TAG
@@ -35,18 +35,9 @@ void app_main(void) {
     );
 
     xTaskCreate(buttons_task, "ButtonsTask", 4096, NULL, 4, NULL);
-    ESP_LOGI(TAG, "Initizialization complete");
-    display_start_ui_task();
-
     while (1) {
-        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        if (now - last_log_time > 1000) {
-            // Imprimimos la lectura del ADC que la otra tarea está actualizando
-             last_log_time = now;
-        }
-         vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
-
 
 

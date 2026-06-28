@@ -3,7 +3,7 @@ stateDiagram-v2
     [*] --> RUNNING : Nivel > 0
     
     RUNNING --> STBY : Corriente < 1mA (Desconexión)
-    
+    STBY --> DONE : 60 segundos
     STBY --> RECOVER : Contacto detectado 
     
     RECOVER --> RUNNING : Rampa completada

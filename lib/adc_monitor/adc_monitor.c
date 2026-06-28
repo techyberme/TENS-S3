@@ -30,15 +30,14 @@ extern TensChannel_t ch_A;
 extern TensChannel_t ch_B;
 float batt_percentage = 0;
 bool isCharging = false;
-volatile bool battery_flag = true;
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
 static adc_continuous_handle_t handle = NULL;
 
-static TaskHandle_t s_monitor_task_handle = NULL; // Handle de la tarea que procesará los datos
+static TaskHandle_t s_monitor_task_handle = NULL; 
  
  
-// Se dispara el callback cuando se llena el frame
+// When frame is completed, callback is triggered
 static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, 
                                        const adc_continuous_evt_data_t *edata, 
                                        void *user_data) {
@@ -88,7 +87,7 @@ void monitor_task(void *pvParameters) {
                         process_voltage(val, 'B');
                     }
                     // Battery voltage processing
-                    else if (chan == ADC_BAT && battery_flag) {
+                    else if (chan == ADC_BAT) {
                         sum_bat_raw += val;
                         count_bat++;
                         
@@ -101,9 +100,6 @@ void monitor_task(void *pvParameters) {
                             // Transformar milivoltios a % usando tu tabla e interpolación
                             batt_percentage = calc_percentage(volt_mv);
                             
-                            // for now, stop measuring the battery
-                            battery_flag= false; 
-                            remove_battery_from_pattern();
                             // reset vars
                             sum_bat_raw = 0;
                             count_bat = 0;
@@ -185,7 +181,7 @@ void adc_calibrate_init(void) {
     esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle);
     
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "Error al crear esquema de calibración. ¿eFuses no grabados?");
+        ESP_LOGI(TAG, "No efuses detected");
     }
 }
 
@@ -290,38 +286,6 @@ float calc_percentage(int volt){
     return 0.;
 }
 
-void remove_battery_from_pattern(void) {
-    // Stop ADC
-    ESP_ERROR_CHECK(adc_continuous_stop(handle));
-
-    // New optimized pattern
-    adc_continuous_config_t new_config = {
-        .sample_freq_hz = 60000, // Down to 60 kHz
-        .conv_mode = ADC_CONV_SINGLE_UNIT_2,
-        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
-    };
-
-    adc_digi_pattern_config_t clean_pattern[6] = {
-        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_A, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
-        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_B, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
-        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_A, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
-        { .atten = ADC_ATTEN_CURRENT, .channel = ADC_CURR_B, .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
-        { .atten = ADC_ATTEN_VOL, .channel = ADC_VOL_A,  .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
-        { .atten = ADC_ATTEN_VOL, .channel = ADC_VOL_B,  .unit = ADC_UNIT_2, .bit_width = ADC_BITWIDTH_DEFAULT },
-     };
-
-
-    new_config.pattern_num = 6;
-    new_config.adc_pattern = clean_pattern;
-
-    // Reconfig DMA
-    ESP_ERROR_CHECK(adc_continuous_config(handle, &new_config));
-
-    // Start ADC
-    ESP_ERROR_CHECK(adc_continuous_start(handle));
-    
-    ESP_LOGI(TAG, "ADC reconfigured");
-}
 
 
 void charge_task(void *pvParameters) {
