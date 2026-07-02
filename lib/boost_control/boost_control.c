@@ -14,10 +14,11 @@ extern TensChannel_t ch_A;
 extern TensChannel_t ch_B;
 static const char *RCTAG = "RC Filter"; 
 static uint32_t current_duty= 38;
-static uint32_t saved_duty= 38;
 static mcpwm_cmpr_handle_t eff_comparator = NULL;
 static led_strip_handle_t led_strip;
 static TaskHandle_t converter_handle = NULL;
+static bool working_A= 0;
+static bool working_B= 0;
 led_strip_handle_t configure_led(void)
 {
     // LED Configuration
@@ -98,16 +99,20 @@ void set_DAC_value(uint16_t level, char channel) {
     //10 ms timeout, in case the bus is blocked
     if (channel == 'A') {
         esp_err_t  err = i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR_A, data, 2, pdMS_TO_TICKS(10));
+        if (value >0) working_A = true;
+        else working_A = false;
         if (err != ESP_OK) {
-        ESP_LOGE("DAC_CONTROL", "Fallo I2C escribiendo al canal %c. Código: %s", channel, esp_err_to_name(err));
-    } 
+            ESP_LOGE("DAC_CONTROL", "Fallo I2C escribiendo al canal %c. Código: %s", channel, esp_err_to_name(err));
+        } 
         
     }
     else if (channel == 'B') {
         esp_err_t   err = i2c_master_write_to_device(I2C_MASTER_NUM, MCP4725_ADDR_B, data, 2, pdMS_TO_TICKS(10)); 
+        if (value > 0) working_B = true;
+        else working_B = false;
         if (err != ESP_OK) {
-        ESP_LOGE("DAC_CONTROL", "Fallo I2C escribiendo al canal %c. Código: %s", channel, esp_err_to_name(err));
-    }
+            ESP_LOGE("DAC_CONTROL", "Fallo I2C escribiendo al canal %c. Código: %s", channel, esp_err_to_name(err));
+        }
     }
    
 
@@ -117,7 +122,10 @@ void boost_enable(bool enable) {
     gpio_set_level(BOOST_EN_GPIO, !enable); //negative logic
     if (enable){
         set_pwm_duty_cycle(38);  
-        xTaskCreate(converter_task, "converter_task", 4096, NULL, 8, &converter_handle);
+        //xTaskCreate(converter_task, "converter_task", 4096, NULL, 8, &converter_handle);
+    }
+    else{
+        boost_stop(ERR_NONE);
     }
 }
 
@@ -132,7 +140,7 @@ void boost_stop(system_state_t error) {
     }
     set_DAC_value(0, 'A'); // DACS off
     set_DAC_value(0, 'B'); 
-    hbridge_stop('A'); // Parada de emergencia del puente H, lo hago después del boost para evitar picos de corriente al cortar el puente H antes que el boost
+    hbridge_stop('A');  
     hbridge_stop('B');
     update_led(error);
 } 
@@ -142,6 +150,10 @@ void update_led(system_state_t state){
         case ERROR:
             led_strip_set_pixel(led_strip, 0, 255, 0, 0); // RED
             ESP_LOGE("SAFETY", "STOP: ERROR GENERAL");
+            break;
+        case ERR_NONE:
+            led_strip_set_pixel(led_strip, 0, 0, 255, 0); // RED
+            ESP_LOGE("SAFETY", "UPDATE LED");
             break;
         case WARN_OPEN_CIRCUIT:
             led_strip_set_pixel(led_strip, 0, 212, 99, 28); // Naranja 
@@ -208,7 +220,7 @@ void rcfilter_init(void){
     ESP_LOGI(RCTAG, "Set generator action on timer and compare event");
     // PWM Start with HIGH State when Timer is 0 and LOW State when Comparators value is equal Timer, For MCPWM_TIMER_COUNT_MODE_UP
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(eff_generator,MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
-    ESP_ERROR_CHECK(mcpwm_generator_set_actions_on_compare_event(eff_generator,MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, eff_comparator, MCPWM_GEN_ACTION_LOW)));
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(eff_generator,MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, eff_comparator, MCPWM_GEN_ACTION_LOW)));
     ESP_LOGI(RCTAG, "Enable and start timer");
     ESP_ERROR_CHECK(mcpwm_timer_enable(timer));
     ESP_ERROR_CHECK(mcpwm_timer_start_stop(timer, MCPWM_TIMER_START_NO_STOP));
@@ -220,6 +232,10 @@ void set_pwm_duty_cycle(uint32_t duty_cycle){
     if (duty_cycle > 38){   //límite a 1,24
         duty_cycle= 38;
     }
+    if (eff_comparator == NULL) {
+        ESP_LOGE("PWM", "Fallo crítico: eff_comparator es NULL. ¿Se ha ejecutado rcfilter_init?");
+        return;
+    }
     esp_err_t ret=mcpwm_comparator_set_compare_value(eff_comparator, duty_cycle);
     if (ret != ESP_OK) {
         ESP_LOGE("PWM", "Error al ajustar el Duty Cycle: %s", ret);
@@ -227,20 +243,17 @@ void set_pwm_duty_cycle(uint32_t duty_cycle){
   }  
 
 
-void update_voltage(void){
-    float  margin = (ch_A.voltage < ch_B.voltage) ? ch_A.voltage : ch_B.voltage;
-    if (margin > (V_MARGIN_TARGET + V_MARGIN_BAND)){
-        if (current_duty < 38) current_duty +=1;   //~1 volt change
-    }
-    else if (margin > (V_MARGIN_TARGET - V_MARGIN_BAND)){
-        if (current_duty>1) current_duty -=1; 
-    }
-    set_pwm_duty_cycle(current_duty);
-  }
+
 
 void converter_task(void *pvParameters){
     while(1){
-        float  margin = (ch_A.voltage < ch_B.voltage) ? ch_A.voltage : ch_B.voltage;
+        float  margin = 0;
+        if (working_A && working_B){
+            margin = (ch_A.voltage < ch_B.voltage) ? ch_A.voltage : ch_B.voltage;
+        }
+        else {
+        margin = working_A ? ch_A.voltage : (working_B ? ch_B.voltage : 0.0f);
+        }  
         if (margin > (V_MARGIN_TARGET + V_MARGIN_BAND)){
             if (current_duty < 38) current_duty +=1;   //~1 volt change
         }

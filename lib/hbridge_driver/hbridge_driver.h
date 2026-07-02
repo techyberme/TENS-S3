@@ -5,11 +5,11 @@
 #include "esp_err.h"
 
 
-#define HBRIDGE_GPIO_A1  4   //1
-#define HBRIDGE_GPIO_B1  5
-#define HBRIDGE_GPIO_A2  42
-#define HBRIDGE_GPIO_B2  45     //4
-#define CLAMP_A  15           //39
+#define HBRIDGE_GPIO_A1  1   //4
+#define HBRIDGE_GPIO_B1  42
+#define HBRIDGE_GPIO_A2  5
+#define HBRIDGE_GPIO_B2  4     //45
+#define CLAMP_A  39           //3
 #define CLAMP_B 47
 typedef enum {
     TENS_MODE_CONTINUO, // 4 kHz c 

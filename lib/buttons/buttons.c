@@ -64,7 +64,7 @@ void buttons_task(void *pvParameters) {
         bool up_pressed = (gpio_get_level(UP_GPIO) == 0);
         bool down_pressed = (gpio_get_level(DOWN_GPIO) == 0);
 
-        // Detección de flanco de subida (solo dispara 1 vez por pulsación)
+        // Rising edge
         bool up_trigger = (up_pressed && !last_up_state);
         bool down_trigger = (down_pressed && !last_down_state);
         bool ok_trigger = (ok_pressed && !last_ok_state);

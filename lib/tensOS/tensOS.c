@@ -5,7 +5,7 @@
 #include "driver/i2c.h"
 #include "esp_log.h"
 #include "tensOS.h"
-#include "adc_monitor.h"
+#include "adc_mon_oneshot.h"
 #include "boost_control.h"
 #include "hbridge_driver.h"
 #include "oled.h"
@@ -54,14 +54,14 @@ void os_control_task(void *pvParameters) {
     uint8_t wdi_current_state = 0;
 
     while(1) {         
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);  //espera 20 ms desde que se inicia la tarea, me permite calcular el tiempo de sesion
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);  //Wait exactly 20 ms seconds, to calculate time
         //Watchdog
-        // wdi_cycle_counter++;
-        // if (wdi_cycle_counter >= 25) { //Every 500 ms
-        //     wdi_current_state = !wdi_current_state; // Invert state
-        //     gpio_set_level(WDI_GPIO, wdi_current_state);
-        //     wdi_cycle_counter = 0;
-        // }
+        wdi_cycle_counter++;
+        if (wdi_cycle_counter >= 25) { //Every 500 ms
+            wdi_current_state = !wdi_current_state; // Invert state
+            gpio_set_level(WDI_GPIO, wdi_current_state);
+            wdi_cycle_counter = 0;
+        }
         //Actions carried on just once the state changes
         if (current_state != last_state) {
             ESP_LOGI(TAG, "Transición de estado: %d -> %d", last_state, current_state);
@@ -76,7 +76,7 @@ void os_control_task(void *pvParameters) {
                     channels[i]->low_current_cnt = 0;
                     channels[i]->status = CHAN_RUNNING; 
                 }
-                //boost_enable(false); 
+                boost_enable(false); 
                 set_DAC_value(0, 'A');
                 // set_DAC_value(0, 'B');
                 display_set_state(SCREEN_INIT);
@@ -114,6 +114,8 @@ void os_control_task(void *pvParameters) {
             }
             if (current_state == STATE_PROGRAM) {
                 display_set_state(SCREEN_CONFIG_PROG);
+                ESP_LOGI("LED", "TURNING LED ON");
+                update_led(ERR_NONE);
                 program = 1; 
             }  
             if (current_state == STATE_FUNC) {
@@ -244,6 +246,7 @@ void os_control_task(void *pvParameters) {
                     }
                     if (disconnected_timer >= 30){ //after 30 seconds
                         boost_stop(ERR_OPEN_CIRCUIT);
+                        EN_PWR = false;
                         current_state = STATE_DONE;
                     }
                 }
@@ -277,6 +280,7 @@ void os_control_task(void *pvParameters) {
             
             case STATE_DONE:
                 buzzer_alarm();
+                EN_PWR = false;
                 boost_stop(WARN_DONE);
                 uint8_t avg_A = 0;
                 uint8_t avg_B = 0;
@@ -301,6 +305,7 @@ void os_control_task(void *pvParameters) {
                 break;
             case STATE_ERROR:
                 boost_stop(ERROR);
+                EN_PWR = false;
                 vTaskSuspend(NULL); 
                 break;
             case STATE_DOCTOR_INIT:

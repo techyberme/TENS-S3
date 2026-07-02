@@ -14,3 +14,5 @@ CONFIG_PARTITION_TABLE_OFFSET=0x8000
 
 # Activación del Watchdog Timer si lo configuras para seguridad médica
 CONFIG_ESP_TASK_WDT_EN=y
+
+CONFIG_ADC_CONTINUOUS_FORCE_USE_ADC2_ON_C3_S3=y

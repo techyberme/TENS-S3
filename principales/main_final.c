@@ -2,7 +2,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "adc_monitor.h"
+#include "adc_mon_oneshot.h"
 #include "boost_control.h" // Incluye donde esté tu función del DAC
 #include "oled.h"
 #include "tensOS.h"
@@ -10,7 +10,7 @@
 #include "hbridge_driver.h"
 #include "buzzer.h"
 #include "settings.h"
- 
+extern TensChannel_t ch_A; 
 
 
 void app_main(void) {
@@ -18,9 +18,11 @@ void app_main(void) {
     init_nvs();
     display_init();
     display_show_logo();
-    //boost_init();
-    buzzer_init();
+    //adc_monitor_init();
+    boost_init();
+    //buzzer_init();
     buttons_init();
+    rcfilter_init();
     vTaskDelay(pdMS_TO_TICKS(3000));
     // 3. Lanzar la interfaz y continuar con el resto del sistema
     display_start_ui_task();
@@ -36,7 +38,8 @@ void app_main(void) {
 
     xTaskCreate(buttons_task, "ButtonsTask", 4096, NULL, 4, NULL);
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI("MAIN", "current in A: %f", ch_A.current);
     }
 }
 

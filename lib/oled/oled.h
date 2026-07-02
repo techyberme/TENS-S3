@@ -1,5 +1,6 @@
 #ifndef OLED_H
 #define OLED_H
+#include <stdint.h>
 typedef enum {
     SCREEN_LOGO,
     SCREEN_INIT,
@@ -24,5 +25,7 @@ void display_start_ui_task(void);
 void display_set_state(ui_state_t new_state);
 void display_low_battery_warning(void);
 void display_charge_shutdown_warning();
+void draw_config_lev(uint32_t duty_cycle);
+void draw_init(void) ;
 
 #endif

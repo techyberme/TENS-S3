@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 // Configuración I2C
-#define I2C_MASTER_SCL_IO   18//41    
-#define I2C_MASTER_SDA_IO   17            //40
+#define I2C_MASTER_SCL_IO   41//18 
+#define I2C_MASTER_SDA_IO   40 //17     
  
 #define I2C_MASTER_NUM       I2C_NUM_0  
 #define I2C_MASTER_FREQ_HZ   100000 // 100kHz 

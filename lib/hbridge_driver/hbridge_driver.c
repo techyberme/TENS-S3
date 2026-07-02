@@ -23,6 +23,7 @@ static mcpwm_gen_handle_t gen_or = NULL;
 static mcpwm_cmpr_handle_t cmp_up = NULL;
 static mcpwm_cmpr_handle_t cmp_down = NULL;
 static esp_timer_handle_t burst_timer = NULL;
+static  mcpwm_sync_handle_t timer0_sync_src = NULL;
 // Fixed programs doctor
 const tens_program_t PROGRAM_DATABASE[] = {
     [0] = { .frequency_hz = 4000, .deadtime_ticks = 50, .mode = TENS_MODE_CONTINUO, .burst_hz = 0 },
@@ -168,7 +169,7 @@ void hbridge_init(const tens_program_t *prog)
     
     ESP_ERROR_CHECK(mcpwm_new_timer(&timer1_config, &timer1));
     // 2. Sincronizar fase: Timer 1 se reinicia cuando Timer 0 llega a cero (TEZ)
-    mcpwm_sync_handle_t timer0_sync_src;
+   
     mcpwm_timer_sync_src_config_t sync_src_config = {
         .timer_event = MCPWM_TIMER_EVENT_EMPTY, // Evento TEZ del Timer 0
     };
@@ -330,7 +331,10 @@ void hbridge_deinit(void) {
         }
     }
     if (oper_or) { mcpwm_del_operator(oper_or); oper_or = NULL; }
-
+    if (timer0_sync_src) { 
+        ESP_ERROR_CHECK(mcpwm_del_sync_src(timer0_sync_src)); 
+        timer0_sync_src = NULL; 
+    }
     // Eliminate timers
     if (timer) { mcpwm_del_timer(timer); timer = NULL; }
     if (timer1) { mcpwm_del_timer(timer1); timer1 = NULL; }
