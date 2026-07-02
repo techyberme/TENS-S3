@@ -1,51 +1,58 @@
-/*
- * Adaptación para ESP32-S3 - LED RGB Interno
- * Versión de librería: led_strip v3.0.x
- */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "led_strip.h"
 #include "esp_log.h"
-#include "esp_err.h"
-#include "oled.h"
+#include "wifi.h"
+#include "mqtt_cli.h"
+#include "esp_random.h"
+static const char *TAG = "MAIN_APP";
 
-static const char *TAG = "RGB_DEBUG";
 
-
-void app_main(void)
-{
-    display_init();
-    uint8_t color_state = 0; // 0: Rojo, 1: Verde, 2: Azul, 3: Blanco
-
-    ESP_LOGI(TAG, "Iniciando ciclo de colores en el LED");
+// Tarea de FreeRTOS para generar y publicar telemetría de prueba
+void telemetry_task(void *pvParameters) {
+    telemetry_payload_t mock_session = {
+        .device_uuid = "c4a760a8-d5e3-4f91-9876-123456789abc",
+        .session_id = 1000,
+        .n_program = 3,
+        .duration_s = 0,
+        .fault_events = 0
+    };
 
     while (1) {
-        switch (color_state) {
-            case 0: // Rojo
-                display_charge_shutdown_warning() ;
-                ESP_LOGI(TAG, "Color: ROJO");
-                break;
-            case 1: // Verde
-                display_low_battery_warning();
-                ESP_LOGI(TAG, "Color: VERDE");
-                break;
-            case 2: // Azul
-                draw_init();
-                ESP_LOGI(TAG, "Color: AZUL");
-                break;
-        }
-
-
-
-        // Incrementar estado y resetear al llegar a 4
-        color_state = (color_state + 1) % 3;
-
-        // Esperar un segundo antes del siguiente cambio
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Generación de valores sintéticos representativos
+        mock_session.z_avg_ohm = 1000.0f + (esp_random() % 2000); // Impedancia entre 1k y 3k ohms
+        mock_session.avg_level_A = (esp_random() % 200) / 10.0f;  // 0.0 - 20.0 mA
+        mock_session.avg_level_B = (esp_random() % 200) / 10.0f;  
+        mock_session.duration_s += 5; 
         
-        // Opcional: Si quieres que se apague entre colores, añade un clear aquí
-        // ESP_ERROR_CHECK(led_strip_clear(led_strip));
-        // vTaskDelay(pdMS_TO_TICKS(200));
+        char *payload = generate_telemetry_json(&mock_session);
+        if (payload != NULL) {
+            if (mqtt_cli_publish_telemetry(payload)) {
+                ESP_LOGI(TAG, "Telemetría encolada -> Z: %.1f ohm, mA_A: %.1f", 
+                         mock_session.z_avg_ohm, mock_session.avg_level_A);
+            }
+            free(payload); // Liberación del heap crítico
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+void app_main(void) {
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    ESP_LOGI(TAG, "=================================================");
+    ESP_LOGI(TAG, " Iniciando Prueba de Conexión Wi-Fi - ESP32-S3  ");
+    ESP_LOGI(TAG, "=================================================");
+
+    // Inicializa el módulo de Wi-Fi de forma asíncrona (asigna tareas al Core 0)
+    wifi_init();
+    vTaskDelay(pdMS_TO_TICKS(5000)); 
+    
+    mqtt_cli_init();
+    xTaskCreatePinnedToCore(telemetry_task, "telemetry_task", 4096, NULL, 5, NULL, 0);
+
+    // Bucle principal para mantener el firmware vivo mientras los eventos gestionan la red
+    while (1) {
+        ESP_LOGI(TAG, "Sistema operativo corriendo... Monitoreando hilos.");
+        vTaskDelay(pdMS_TO_TICKS(5000)); 
     }
 }
