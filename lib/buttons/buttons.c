@@ -21,6 +21,8 @@ volatile uint32_t doc_setup_freq = 2000;
 volatile uint32_t doc_setup_dt = 50;
 volatile uint8_t  doc_setup_mode = 0;
 volatile uint32_t doc_setup_burst = 100;
+volatile uint8_t day_score = 0;
+volatile uint8_t sess_score = 0;
 static button_state_t lock_state = UNLOCKED_STATE_A;
 static uint32_t hold_counter = 0;
 static uint32_t inactivity_counter = 0;
@@ -258,20 +260,62 @@ void buttons_task(void *pvParameters) {
                     break;
             case DOCTOR_CFG_BURST_HZ:
                 if (up_trigger){
-                        doc_setup_burst  += 50;
-                        if (doc_setup_burst  > 200) doc_setup_burst   = 200;     
-                            beep(50);
-                    }  
-                    if (down_trigger){
-                        doc_setup_burst  -= 50;
-                        if (doc_setup_burst  < 50 ) doc_setup_burst   = 50;     
-                            beep(50);
-                    }  
+                    doc_setup_burst  += 50;
+                    if (doc_setup_burst  > 200) doc_setup_burst   = 200;     
+                        beep(50);
+                }  
+                if (down_trigger){
+                    doc_setup_burst  -= 50;
+                    if (doc_setup_burst  < 50 ) doc_setup_burst   = 50;     
+                        beep(50);
+                }  
 
                 if (ok_trigger) {
                     beep(50);
                     write_new_config();
                     current_state = STATE_INIT;
+                }
+                break;
+            case SURV_DAY:
+                if (up_trigger){
+                    day_score  += 1;
+                    if (day_score  > 4) day_score = 4;     
+                        beep(50);
+                }  
+                if (down_trigger){
+                    if (day_score  == 0 ){
+                        day_score   = 0;   
+                    }   
+                    else{
+                        day_score -= 1;
+                    }
+                        beep(50);
+                }  
+
+                if (ok_trigger) {
+                    beep(50);
+                    current_state = SURV_SESS;
+                }
+                break;
+            case SURV_SESS:
+                if (up_trigger){
+                    sess_score  += 1;
+                    if (sess_score  > 4)sess_score = 4;     
+                        beep(50);
+                }  
+                if (down_trigger){
+                    if (sess_score  == 0 ){
+                        sess_score   = 0;   
+                    }   
+                    else{
+                        sess_score -= 1;
+                    }
+                        beep(50);
+                }  
+
+                if (ok_trigger) {
+                    beep(50);
+                    current_state = STATE_DONE;
                 }
                 break;
             default:

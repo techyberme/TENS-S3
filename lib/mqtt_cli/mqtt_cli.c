@@ -3,9 +3,12 @@
 #include "mqtt_cli.h"
 #include "esp_log.h"
 #include "mqtt_client.h"
-
+#include "esp_mac.h"
 static const char *TAG = "MQTT_CLI";
 static esp_mqtt_client_handle_t mqtt_client = NULL;
+
+volatile bool s_mqtt_ready = false;
+char uuid[20];
 
 static const char isrg_root_x1_pem[] = 
     "-----BEGIN CERTIFICATE-----\n"
@@ -39,72 +42,51 @@ static const char isrg_root_x1_pem[] =
     "mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d\n"
     "emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=\n"
     "-----END CERTIFICATE-----\n";
-char* generate_telemetry_json(const telemetry_payload_t *data) {
-    if (data == NULL) {
-        return NULL;
-    }
-
-    // 1. Initialize the root JSON object
+char* generate_telemetry_json(const mqtt_msg_t *data) {
+    // Initialize the root JSON object
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) {
         return NULL;
     }
 
-    // 2. Add the UUID directly to the root
-    cJSON_AddStringToObject(root, "device_uuid", data->device_uuid);
+    //Populate root
+    cJSON_AddNumberToObject(root, "program_id", data->program_id);
+    cJSON_AddNumberToObject(root, "duration", data->duration);
+    cJSON_AddNumberToObject(root, "avg_intensity_ch_a", data->avg_intensity_ch_a);
+    cJSON_AddNumberToObject(root, "avg_intensity_ch_b", data->avg_intensity_ch_b);
+    cJSON_AddNumberToObject(root, "fault_events", data->fault_events);
+    cJSON_AddNumberToObject(root, "user_sensation_day", data->user_sensation_day);
+    cJSON_AddNumberToObject(root, "user_sensation_treatment", data->user_sensation_treatment);
 
-    // 3. Initialize the nested "session_metrics" object
-    cJSON *metrics = cJSON_CreateObject();
-    if (metrics == NULL) {
-        cJSON_Delete(root); // Cleanup root if nested allocation fails
-        return NULL;
-    }
-
-    // 4. Populate the nested metrics
-    cJSON_AddNumberToObject(metrics, "session_id", data->session_id);
-    cJSON_AddNumberToObject(metrics, "program", data->n_program);
-    cJSON_AddNumberToObject(metrics, "duration_s", data->duration_s);
-    
-    // Using cJSON_AddNumberToObject implicitly handles floats
-    cJSON_AddNumberToObject(metrics, "avg_intensity_A", data->avg_level_A);
-    cJSON_AddNumberToObject(metrics, "avg_intensity_B", data->avg_level_B);
-    cJSON_AddNumberToObject(metrics, "z_avg_ohm", data->z_avg_ohm);
-    cJSON_AddNumberToObject(metrics, "fault_events", data->fault_events);
-
-    // 5. Attach the metrics object to the root object
-    cJSON_AddItemToObject(root, "session_metrics", metrics);
-
-    //Use cJSON_PrintUnformatted(root) in production to eliminate whitespace and save MQTT payload size.
+    //Use cJSON_PrintUnformatted(root) eliminate whitespace
     char *json_string = cJSON_PrintUnformatted(root);
 
-    // 7. Free the internal cJSON structures from the FreeRTOS heap
+    // Free memory
     cJSON_Delete(root);
 
     return json_string;
 }
 
 
-/**
- * @brief Manejador de eventos asíncronos del cliente MQTT.
- */
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
     esp_mqtt_event_handle_t event = event_data;
     
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
-            ESP_LOGI(TAG, "Túnel mTLS establecido. Conectado a HiveMQ Cloud.");
+            ESP_LOGI(TAG, "Connected to HiveMQ");
+            s_mqtt_ready = true;
             break;
         case MQTT_EVENT_DISCONNECTED:
-            ESP_LOGW(TAG, "Desconectado del broker MQTT.");
+            ESP_LOGW(TAG, "Disconnected from HiveMQ");
             break;
         case MQTT_EVENT_PUBLISHED:
-            ESP_LOGI(TAG, "Mensaje publicado exitosamente. msg_id=%d", event->msg_id);
+            ESP_LOGI(TAG, "Message successfully published. msg_id=%d", event->msg_id);
             break;
         case MQTT_EVENT_ERROR:
-            ESP_LOGE(TAG, "Error en la capa MQTT/TLS.");
+            ESP_LOGE(TAG, "Error in the MQTT/TLS layer.");
             if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
-                ESP_LOGE(TAG, "Error de transporte reportado desde tls: 0x%x", event->error_handle->esp_tls_last_esp_err);
-                ESP_LOGE(TAG, "Error de transporte reportado desde mbedtls: 0x%x", event->error_handle->esp_tls_stack_err);
+                ESP_LOGE(TAG, "Transport error reported from tls: 0x%x", event->error_handle->esp_tls_last_esp_err);
+                ESP_LOGE(TAG, "Transport error reported from mbedtls: 0x%x", event->error_handle->esp_tls_stack_err);
             }
             break;
         default:
@@ -138,23 +120,27 @@ void mqtt_cli_init(void) {
     
     esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(mqtt_client);
-}
-
+    //===============
+    //Take the uuid
+    //===============
+    uint8_t mac[6];
+    // Read the base MAC address burned into the eFuse
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    
+    // Example output: TENS-348518A6C304
+    snprintf(uuid, 18, "TENS-%02X%02X%02X%02X%02X%02X", 
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    }
 bool mqtt_cli_publish_telemetry(const char *json_payload) {
     if (mqtt_client == NULL || json_payload == NULL) {
-        ESP_LOGE(TAG, "Cliente no inicializado o payload nulo.");
+        ESP_LOGE(TAG, "Null payload or client");
         return false;
     }
+    char topic[40]; 
 
+    snprintf(topic, sizeof(topic), "tens/%s/sessions", uuid);
     // Publicación con QoS 1 (Al menos una vez) para asegurar la llegada del dato médico.
     // El último '0' indica que el mensaje no es 'retained'.
-    int msg_id = esp_mqtt_client_publish(mqtt_client, "hospital/neurology/tens/v1/telemetry", json_payload, 0, 1, 0);
-    
-    if (msg_id == -1) {
-        ESP_LOGE(TAG, "Fallo al encolar el mensaje MQTT.");
-        return false;
-    }
-    
-    ESP_LOGD(TAG, "Mensaje encolado con ID: %d", msg_id);
+    esp_mqtt_client_publish(mqtt_client, topic, json_payload, 0, 1, 0);
     return true;
 }

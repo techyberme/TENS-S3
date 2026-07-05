@@ -54,7 +54,7 @@ doctor_data_t read_doctor(void){
 }
 
 
-void write_stats(uint8_t n_program, uint8_t duration, uint8_t avg_level_A, uint8_t avg_level_B)
+void write_stats(uint8_t program_id, uint8_t duration, uint8_t avg_intensity_ch_a, uint8_t avg_intensity_ch_b)
 {
     nvs_handle_t h;
     uint32_t session_index = 0;
@@ -67,10 +67,10 @@ void write_stats(uint8_t n_program, uint8_t duration, uint8_t avg_level_A, uint8
 
     //Blob with stats structure
     stats_t current_session = {
-        .n_program = n_program,
+        .program_id = program_id,
         .duration = duration,
-        .avg_level_A = avg_level_A,
-        .avg_level_B = avg_level_B
+        .avg_intensity_ch_a = avg_intensity_ch_a,
+        .avg_intensity_ch_b = avg_intensity_ch_b
     };
 
     // key : s_x, eg. s_1
@@ -110,8 +110,8 @@ void export_stats_to_serial(void) {
             snprintf(key, sizeof(key), "s_%lu", (unsigned long)i);
             size_t size = sizeof(stats_t);
             if (nvs_get_blob(h, key, &session, &size) == ESP_OK) {
-                printf("%d,%d,%d,%d\n", session.n_program, session.duration, 
-                                       session.avg_level_A, session.avg_level_B);
+                printf("%d,%d,%d,%d\n", session.program_id, session.duration, 
+                                       session.avg_intensity_ch_a, session.avg_intensity_ch_b);
             }
         }
         nvs_close(h);

@@ -15,7 +15,7 @@
 void adc_monitor_init(void);
 void charging_monitor_init(void);
 void adc_calibrate_init(void);
-
+void adc_stop(void);
 void process_current(uint32_t raw_val, char channel);
 
 void process_voltage(uint32_t raw_val, char channel);

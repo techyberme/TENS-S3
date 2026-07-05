@@ -11,10 +11,14 @@
 #include "oled.h"
 #include "buzzer.h"
 #include "settings.h"
+#include "wifi.h"
+#include "mqtt_cli.h"
 #define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
 volatile SystemState_t current_state = STATE_INIT;
 extern float batt_percentage;
+extern bool s_wifi_ready;
+extern bool s_mqtt_ready;
 SystemState_t last_state = STATE_ZERO;
 static uint32_t doctor_timer = 0;
 static uint32_t disconnected_timer = 0;
@@ -22,15 +26,19 @@ static uint32_t acc_timer = 0;
 static uint32_t session_seconds_sampled = 0;
 static uint32_t level_A_accumulator = 0;
 static uint32_t level_B_accumulator = 0;
+static uint8_t fault_events = 0;
 volatile int program = 1;
 static int recovery_level = RECOVER_LEVEL; 
 //Enable boost
 static bool EN_PWR = false;
+static bool mqtt_initiated = false;
 uint32_t io_num;
 volatile uint32_t time_session= 0;
 volatile uint32_t duration_session = SESSION_DURATION;
 volatile TensChannel_t ch_A = { .id = 'A', .level = 0, .current = 0.0f };
 volatile TensChannel_t ch_B = { .id = 'B', .level = 0, .current = 0.0f };
+extern volatile uint8_t day_score;
+extern volatile uint8_t sess_score;
 SystemState_t get_system_state(void) {
     return current_state;
 }
@@ -138,7 +146,18 @@ void os_control_task(void *pvParameters) {
                 display_set_state(SCREEN_DOCTOR_INIT);
                 doctor_timer = 0;
              } 
-            last_state = current_state; // Actualizar para no repetir
+             if (current_state == SURV_DAY) {
+                buzzer_alarm();
+                EN_PWR = false;
+                boost_stop(WARN_DONE);
+                display_set_state(SCREEN_SURV_DAY);
+                //free ADC2
+                adc_stop();
+             } 
+             if (current_state == SURV_SESS) {
+                display_set_state(SCREEN_SURV_SESS);
+             } 
+            last_state = current_state;  
         }
         switch (current_state) {
             case STATE_INIT:
@@ -203,7 +222,7 @@ void os_control_task(void *pvParameters) {
                         //         set_DAC_value(0, ch->id);
                         //         //hbridge_stop(ch->id);                                
                         //         ESP_LOGW(TAG, "Electrodos desconectados en canal %c", ch->id);
-                                
+                        //         fault_events += 1;
                         //         ch->saved_level = ch->level;
                         //         ch->status = CHAN_STBY;
                         //     }
@@ -247,7 +266,7 @@ void os_control_task(void *pvParameters) {
                     if (disconnected_timer >= 30){ //after 30 seconds
                         boost_stop(ERR_OPEN_CIRCUIT);
                         EN_PWR = false;
-                        current_state = STATE_DONE;
+                        current_state = SURV_DAY;
                     }
                 }
                     else if (ch->status == CHAN_RECOVER){
@@ -273,18 +292,27 @@ void os_control_task(void *pvParameters) {
                 }
                 if (time_session>= pdMS_TO_TICKS(duration_session * 60000)) {
                         ESP_LOGI(TAG, "Sesión terminada. Finalizando...");
-                        current_state = STATE_DONE; 
+                        current_state = SURV_DAY; 
                         break;
                     }
                 break;
             
             case STATE_DONE:
-                buzzer_alarm();
-                EN_PWR = false;
-                boost_stop(WARN_DONE);
                 uint8_t avg_A = 0;
                 uint8_t avg_B = 0;
-
+                if (!s_wifi_ready){
+                    break;
+                }
+                if (s_wifi_ready){
+                    if (!mqtt_initiated){
+                        mqtt_cli_init();
+                        mqtt_initiated = true;
+                    }
+                }
+                if (!s_mqtt_ready) {
+                    ESP_LOGW(TAG, "Waiting for MQTT broker");
+                    break; 
+                }
                 if (session_seconds_sampled > 0) {
                     avg_A = (uint8_t)(level_A_accumulator / session_seconds_sampled);
                     avg_B = (uint8_t)(level_B_accumulator / session_seconds_sampled);
@@ -292,12 +320,28 @@ void os_control_task(void *pvParameters) {
 
                 // save to flash
                 write_stats(program, session_seconds_sampled/60 , avg_A, avg_B);
-
+                
+                mqtt_msg_t session_payload = {
+                    .program_id= program,
+                    .duration = session_seconds_sampled/60,
+                    .avg_intensity_ch_a = avg_A,
+                    .avg_intensity_ch_b = avg_B,
+                    .fault_events = fault_events,
+                    .user_sensation_day = day_score,
+                    .user_sensation_treatment = sess_score,
+                };
+                char *payload = generate_telemetry_json(&session_payload);
+                if (payload != NULL) {
+                    if (mqtt_cli_publish_telemetry(payload)) {
+                        ESP_LOGI(TAG, "Message sent!");
+                    }
+                    free(payload); 
+                }
                 // reset accumulators
                 level_A_accumulator = 0;
                 level_B_accumulator = 0;
                 session_seconds_sampled = 0;
-                ESP_LOGI(TAG, "Programa finalizado");
+                ESP_LOGI(TAG, "Session Ended!");
                 current_state = STATE_INIT; 
                 break;
             case STATE_LOW_BATTERY:
@@ -316,7 +360,24 @@ void os_control_task(void *pvParameters) {
                     current_state = DOCTOR_CFG_FREQ; 
                 }
                 break;
-
+            case SURV_DAY:
+            if (s_wifi_ready){
+                if (!mqtt_initiated){
+                    mqtt_cli_init();
+                    mqtt_initiated = true;
+                }
+                
+            }
+                break;
+            case SURV_SESS:
+            if (s_wifi_ready){
+                if (!mqtt_initiated){
+                    mqtt_cli_init();
+                    mqtt_initiated = true;
+                }
+                
+            }
+                break;
             default:
                 break;
 

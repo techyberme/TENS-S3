@@ -12,7 +12,9 @@ typedef enum {
     SCREEN_DOCTOR_FREQ,
     SCREEN_DOCTOR_MODE,
     SCREEN_DOCTOR_BURST_HZ,
-    SCREEN_DOCTOR_INIT
+    SCREEN_DOCTOR_INIT,
+    SCREEN_SURV_SESS,
+    SCREEN_SURV_DAY
 } ui_state_t;
 // Pin Definition
 #define OLED_SDA_PIN 11//8 //11

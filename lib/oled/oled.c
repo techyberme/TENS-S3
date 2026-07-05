@@ -17,6 +17,8 @@ static ui_state_t past_state = SCREEN_LOGO;
 static const char* TAG = "OLED";
 static u8g2_t u8g2;
 extern uint32_t time_session;
+extern volatile uint8_t day_score = 0;
+extern volatile uint8_t sess_score = 0;
 volatile extern uint32_t duration_session;
 volatile extern int program;
 extern TensChannel_t ch_A;
@@ -154,16 +156,15 @@ static void draw_config_prog() {
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    //if ((now / 500) % 2 == 0){
-        // Valor de los minutos (Grande)
-        u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
+    if ((now / 500) % 2 == 0){
+         u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
         snprintf(buf, sizeof(buf), "%02d", program);
         
         int text_width = u8g2_GetStrWidth(&u8g2, buf);
         int x_centered = (128 - text_width) / 2;
         
         u8g2_DrawStr(&u8g2, x_centered, 58, buf);
-     //   }
+       }
 
     // Guía para el usuario en la parte inferior
     u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
@@ -217,16 +218,15 @@ static void draw_doctor_mode(){
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-   // if ((now / 250) % 2 == 0){
-        // Valor de los minutos (Grande)
-        u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr);
+   if ((now / 250) % 2 == 0){
+         u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr);
         if (doc_setup_mode == 1) sprintf(buf, "%s", "BURST");
         else sprintf(buf, "%s", "NORMAL");
         int text_width = u8g2_GetStrWidth(&u8g2, buf);
         int x_centered = (128 - text_width) / 2;
         
         u8g2_DrawStr(&u8g2, x_centered, 58, buf); 
-     //   }
+       }
         
 
     // Guía para el usuario en la parte inferior
@@ -358,6 +358,12 @@ static void display_task(void *pvParameters) {
                 case SCREEN_DOCTOR_INIT:
                     draw_doctor_init();
                     break;
+                case SCREEN_SURV_DAY:
+                    draw_sens_day();
+                    break;
+                case SCREEN_SURV_SESS:
+                    draw_sens_treat();
+                    break;
             }
         
         if (current_state != past_state) {
@@ -466,7 +472,6 @@ void draw_config_lev(uint32_t duty_cycle){
     int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
 
-    // Valor de los minutos (Grande)
     u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
     snprintf(buf, sizeof(buf), "%lu", duty_cycle);
     
@@ -478,4 +483,68 @@ void draw_config_lev(uint32_t duty_cycle){
     u8g2_SendBuffer(&u8g2);
     dumpScreenToSerial(&u8g2);
     
+}
+
+static void draw_sens_day() {
+    char buf[16];
+    
+    u8g2_ClearBuffer(&u8g2);
+    
+    
+    u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
+    const char* tag_text = "Sensaciones";
+    int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 16, tag_text); 
+    
+    tag_text = "Hoy"; 
+    tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 32, tag_text);
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    //Blinking
+    if ((now / 500) % 2 == 0){
+        u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
+        snprintf(buf, sizeof(buf), "%02u", sess_score);
+        
+        int text_width = u8g2_GetStrWidth(&u8g2, buf);
+        int x_centered = (128 - text_width) / 2;
+        
+        u8g2_DrawStr(&u8g2, x_centered, 58, buf);
+    }
+
+    u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
+    u8g2_DrawStr(&u8g2, 0, 64, "[-]                   [+]");
+    
+    u8g2_SendBuffer(&u8g2);
+}
+
+static void draw_sens_treat() {
+    char buf[16];
+    
+    u8g2_ClearBuffer(&u8g2);
+    
+    
+    u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
+    const char* tag_text = "Sensaciones";
+    int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 16, tag_text); 
+    
+    tag_text = "Tratamiento"; 
+    tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 32, tag_text);
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    //Blinking
+    if ((now / 500) % 2 == 0){
+        u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
+        snprintf(buf, sizeof(buf), "%02u", day_score);
+        
+        int text_width = u8g2_GetStrWidth(&u8g2, buf);
+        int x_centered = (128 - text_width) / 2;
+        
+        u8g2_DrawStr(&u8g2, x_centered, 58, buf);
+    }
+
+    u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
+    u8g2_DrawStr(&u8g2, 0, 64, "[-]                   [+]");
+    
+    u8g2_SendBuffer(&u8g2);
 }

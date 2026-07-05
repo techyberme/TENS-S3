@@ -6,30 +6,30 @@
 #include "mqtt_cli.h"
 #include "esp_random.h"
 static const char *TAG = "MAIN_APP";
+extern bool connected;
 
 
 // Tarea de FreeRTOS para generar y publicar telemetría de prueba
 void telemetry_task(void *pvParameters) {
-    telemetry_payload_t mock_session = {
-        .device_uuid = "c4a760a8-d5e3-4f91-9876-123456789abc",
-        .session_id = 1000,
-        .n_program = 3,
-        .duration_s = 0,
-        .fault_events = 0
+    mqtt_msg_t mock_session = {
+        .program_id= 2,
+        .duration = 0,
+        .fault_events = 0,
+        .user_sensation_day = 3,
+        .user_sensation_treatment = 1,
     };
 
     while (1) {
-        // Generación de valores sintéticos representativos
-        mock_session.z_avg_ohm = 1000.0f + (esp_random() % 2000); // Impedancia entre 1k y 3k ohms
-        mock_session.avg_level_A = (esp_random() % 200) / 10.0f;  // 0.0 - 20.0 mA
-        mock_session.avg_level_B = (esp_random() % 200) / 10.0f;  
-        mock_session.duration_s += 5; 
+        mock_session.avg_intensity_ch_a= (esp_random() % 200) / 10.0f;  // 0.0 - 20.0 mA
+        mock_session.avg_intensity_ch_b= (esp_random() % 200) / 10.0f;  
+        mock_session.duration += 5; 
+        
         
         char *payload = generate_telemetry_json(&mock_session);
         if (payload != NULL) {
             if (mqtt_cli_publish_telemetry(payload)) {
-                ESP_LOGI(TAG, "Telemetría encolada -> Z: %.1f ohm, mA_A: %.1f", 
-                         mock_session.z_avg_ohm, mock_session.avg_level_A);
+                ESP_LOGI(TAG, "Message set -> mA_A: %.1f", 
+                          mock_session.avg_intensity_ch_a);
             }
             free(payload); // Liberación del heap crítico
         }
@@ -38,8 +38,7 @@ void telemetry_task(void *pvParameters) {
     }
 }
 void app_main(void) {
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    ESP_LOGI(TAG, "=================================================");
+     SP_LOGI(TAG, "=================================================");
     ESP_LOGI(TAG, " Iniciando Prueba de Conexión Wi-Fi - ESP32-S3  ");
     ESP_LOGI(TAG, "=================================================");
 

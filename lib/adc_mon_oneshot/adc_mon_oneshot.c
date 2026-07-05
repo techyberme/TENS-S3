@@ -12,7 +12,7 @@
 #include "boost_control.h"
 #include "tensOS.h"
 #include "oled.h"
-
+#include "wifi.h"
 
 static const float battery_curve[9][2] = {
     {8400, 100.0},
@@ -32,7 +32,8 @@ float batt_percentage = 0;
 bool isCharging = false;
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
- 
+//variable to signal deinit
+s_monitor_bool = false;
 adc_oneshot_unit_handle_t adc2_handle;
 static TaskHandle_t s_monitor_task_handle = NULL; 
  
@@ -49,7 +50,7 @@ int raw_val = 0;
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(1); 
 
-    while (1) {
+    while (s_monitor_bool) {
         if (cali_handle == NULL) {
             ESP_LOGE(TAG, "No calibration.");
             vTaskDelay(pdMS_TO_TICKS(100)); // Espera larga si hay error crítico
@@ -100,6 +101,8 @@ int raw_val = 0;
         // Al no haber interrupciones DMA, si no bloqueas la tarea, el ESP32 crasheará por inanición (Starvation)
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
+    s_monitor_task_handle = NULL;
+    vTaskDelete(NULL);
 }
 
 // Tarea ADC
@@ -138,6 +141,7 @@ void adc_monitor_init(void) {
 
     // 4. Definición de la tarea que ahora tendrá que hacer "polling"
     xTaskCreate(monitor_task, "Monitor", 4096, NULL, 10, &s_monitor_task_handle);
+    s_monitor_bool = true;
 }
 
 void charging_monitor_init(void) {
@@ -150,8 +154,28 @@ void charging_monitor_init(void) {
     gpio_config(&io_conf);
 }
 
-
- 
+//stop 
+void adc_stop(void){
+    if (s_monitor_task_handle != NULL) {
+    s_monitor_bool = false;
+    //make sure task is done
+    while (s_monitor_task_handle != NULL) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    ESP_LOGI(TAG, "ADC TASK STOPPED");  
+    }
+    if (adc2_handle != NULL){
+        ESP_ERROR_CHECK(adc_oneshot_del_unit(adc2_handle));
+        adc2_handle = NULL;
+        ESP_LOGI(TAG, "ADC2 freed");
+    }
+    if (cali_handle != NULL){
+        ESP_ERROR_CHECK(adc_cali_delete_scheme_curve_fitting(cali_handle));
+        cali_handle = NULL;
+        ESP_LOGI(TAG, "Calib freed");
+    }
+    wifi_init();
+}
 void adc_calibrate_init(void) {
     ESP_LOGI(TAG, "Configuring calibration...");
     adc_cali_curve_fitting_config_t cali_config = {

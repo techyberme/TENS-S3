@@ -5,22 +5,21 @@
 #include <stdio.h>
 
 typedef struct {
-    char device_uuid[37];
-    uint32_t session_id;
-    uint8_t n_program;
-    uint32_t duration_s;
-    float avg_level_A;
-    float avg_level_B;
-    float z_avg_ohm;
+    uint8_t program_id;
+    uint32_t duration;
+    float avg_intensity_ch_a;
+    float avg_intensity_ch_b;
     uint8_t fault_events;
-} telemetry_payload_t;
+    uint8_t user_sensation_day;
+    uint8_t user_sensation_treatment;
+} mqtt_msg_t;
 
 /**
  * @brief Serializes the telemetry payload into a JSON string.
  * @param data Pointer to the populated telemetry structure.
  * @return char* Dynamically allocated JSON string. MUST be freed by the caller.
  */
-char* generate_telemetry_json(const telemetry_payload_t *data);
+char* generate_telemetry_json(const mqtt_msg_t *data);
 
 /**
  * @brief Inicializa el cliente MQTT, configura los certificados TLS y arranca la tarea de red.
