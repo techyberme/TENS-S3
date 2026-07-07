@@ -4,6 +4,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "tensOS.h"
 #include "adc_mon_oneshot.h"
 #include "boost_control.h"
@@ -11,7 +12,8 @@
 #include "oled.h"
 #include "buzzer.h"
 #include "settings.h"
-#define COMP_MS 100 //compensación cada 100 ms.
+#include "buttons.h"
+
 static const char *TAG = "CONTROL_LOGIC";
 volatile SystemState_t current_state = STATE_INIT;
 extern float batt_percentage;
@@ -26,7 +28,6 @@ volatile int program = 1;
 static int recovery_level = RECOVER_LEVEL; 
 //Enable boost
 static bool EN_PWR = false;
-uint32_t io_num;
 volatile uint32_t time_session= 0;
 volatile uint32_t duration_session = SESSION_DURATION;
 volatile TensChannel_t ch_A = { .id = 'A', .level = 0, .current = 0.0f };
@@ -299,6 +300,9 @@ void os_control_task(void *pvParameters) {
                 session_seconds_sampled = 0;
                 ESP_LOGI(TAG, "Programa finalizado");
                 current_state = STATE_INIT; 
+                //Trigger Deep Sleep
+                esp_sleep_enable_ext1_wakeup(1ULL <<OK_GPIO, ESP_EXT1_WAKEUP_ALL_LOW);
+                esp_deep_sleep_start();
                 break;
             case STATE_LOW_BATTERY:
                 vTaskSuspend(NULL); // Block task 

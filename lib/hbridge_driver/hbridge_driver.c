@@ -20,6 +20,7 @@ volatile bool B_bridge_silence = false;
 static mcpwm_timer_handle_t timer1 = NULL;
 static mcpwm_oper_handle_t oper_or = NULL;
 static mcpwm_gen_handle_t gen_or = NULL;
+static mcpwm_gen_handle_t gen_or_b = NULL;
 static mcpwm_cmpr_handle_t cmp_up = NULL;
 static mcpwm_cmpr_handle_t cmp_down = NULL;
 static esp_timer_handle_t burst_timer = NULL;
@@ -192,19 +193,25 @@ void hbridge_init(const tens_program_t *prog)
     uint32_t compare_time = prog->deadtime_ticks + margen_ticks;
     ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(cmp_up,compare_time)); 
 
-    // 4. Crear Generador y asignar acciones
+    //Create Generator and actions
     mcpwm_generator_config_t gen_or_config = {.gen_gpio_num = CLAMP_A};
-    //todo CLAMP_B
+    mcpwm_generator_config_t gen_or_b_config = {.gen_gpio_num = CLAMP_B};
     ESP_ERROR_CHECK(mcpwm_new_generator(oper_or, &gen_or_config, &gen_or));
+    ESP_ERROR_CHECK(mcpwm_new_generator(oper_or, &gen_or_b_config, &gen_or_b));
 
     // At TEZ (tick 0): Both base signals become 1. NAND(1,1) = 0.
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_or,
+        MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(gen_or_b,
         MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
 
     // At cmp_up (deadtime_ticks): One base signal becomes 0. NAND(1,0) = 1.
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or,
         MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_up, MCPWM_GEN_ACTION_LOW)));
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(gen_or_b,
+        MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmp_up, MCPWM_GEN_ACTION_LOW)));
     mcpwm_generator_set_force_level(gen_or, 1, true);
+    mcpwm_generator_set_force_level(gen_or_b, 1, true);
     // uint32_t margen_ticks = 5; // El tiempo que la señal OR "tarda" en bajar y "se adelanta" en subir
 
     // // Seguridad: Evitar underflow si el margen es mayor que la mitad del deadtime
