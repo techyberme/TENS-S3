@@ -4,6 +4,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "tensOS.h"
 #include "adc_mon_oneshot.h"
 #include "boost_control.h"
@@ -13,6 +14,7 @@
 #include "settings.h"
 #include "wifi.h"
 #include "mqtt_cli.h"
+#include "buttons.h"
 #define COMP_MS 100 //compensación cada 100 ms.
 static const char *TAG = "CONTROL_LOGIC";
 volatile SystemState_t current_state = STATE_INIT;
@@ -342,7 +344,11 @@ void os_control_task(void *pvParameters) {
                 level_B_accumulator = 0;
                 session_seconds_sampled = 0;
                 ESP_LOGI(TAG, "Session Ended!");
-                current_state = STATE_INIT; 
+                //Wait to make sure message is sent
+                vTaskDelay(pdMS_TO_TICKS(5000));
+                esp_sleep_enable_ext1_wakeup(1ULL << OK_GPIO, ESP_EXT1_WAKEUP_ALL_LOW);
+                esp_deep_sleep_start();
+              
                 break;
             case STATE_LOW_BATTERY:
                 vTaskSuspend(NULL); // Block task 

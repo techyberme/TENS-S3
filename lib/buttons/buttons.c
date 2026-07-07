@@ -277,12 +277,15 @@ void buttons_task(void *pvParameters) {
                 }
                 break;
             case SURV_DAY:
+                inactivity_counter++;
                 if (up_trigger){
+                    inactivity_counter = 0;
                     day_score  += 1;
                     if (day_score  > 4) day_score = 4;     
                         beep(50);
                 }  
                 if (down_trigger){
+                    inactivity_counter = 0;
                     if (day_score  == 0 ){
                         day_score   = 0;   
                     }   
@@ -293,17 +296,27 @@ void buttons_task(void *pvParameters) {
                 }  
 
                 if (ok_trigger) {
+                    inactivity_counter = 0;
                     beep(50);
                     current_state = SURV_SESS;
+                }
+                if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
+                                day_score   = NULL;  
+                                inactivity_counter = 0;
+                                current_state = SURV_SESS;
+                                beep(200);
+                                ESP_LOGI(TAG, "User did not respond to the enquiries");
                 }
                 break;
             case SURV_SESS:
                 if (up_trigger){
+                    inactivity_counter = 0;
                     sess_score  += 1;
                     if (sess_score  > 4)sess_score = 4;     
                         beep(50);
                 }  
                 if (down_trigger){
+                    inactivity_counter = 0;
                     if (sess_score  == 0 ){
                         sess_score   = 0;   
                     }   
@@ -314,8 +327,16 @@ void buttons_task(void *pvParameters) {
                 }  
 
                 if (ok_trigger) {
+                    inactivity_counter = 0;
                     beep(50);
                     current_state = STATE_DONE;
+                }
+                if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
+                                sess_score = NULL;
+                                inactivity_counter = 0;
+                                beep(200);
+                                ESP_LOGI(TAG, "User did not respond to the enquiries");
+                                current_state = STATE_DONE;
                 }
                 break;
             default:
