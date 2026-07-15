@@ -300,7 +300,7 @@ void buttons_task(void *pvParameters) {
                     beep(50);
                     current_state = SURV_SESS;
                 }
-                if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
+                if (inactivity_counter > LOCK_TIMEOUT_TICKS * 4) {
                                 day_score   = NULL;  
                                 inactivity_counter = 0;
                                 current_state = SURV_SESS;
