@@ -12,7 +12,9 @@ typedef enum {
     SCREEN_DOCTOR_FREQ,
     SCREEN_DOCTOR_MODE,
     SCREEN_DOCTOR_BURST_HZ,
-    SCREEN_DOCTOR_INIT
+    SCREEN_DOCTOR_INIT,
+    SCREEN_ELECTRODES,
+    SCREEN_SLEEP
 } ui_state_t;
 // Pin Definition
 #define OLED_SDA_PIN 11//8 //11
@@ -25,7 +27,8 @@ void display_start_ui_task(void);
 void display_set_state(ui_state_t new_state);
 void display_low_battery_warning(void);
 void display_charge_shutdown_warning();
-void draw_config_lev(uint32_t duty_cycle);
-void draw_init(void) ;
-
+void draw_config_lev(float voltage, float current, uint8_t dac_value);
+void draw_init(void);
+void display_electrodes_warning(void);
+void display_tens_shutdown(void);
 #endif

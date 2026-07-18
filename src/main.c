@@ -1,51 +1,47 @@
-/*
- * Adaptación para ESP32-S3 - LED RGB Interno
- * Versión de librería: led_strip v3.0.x
- */
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "led_strip.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
-#include "esp_err.h"
+#include "adc_mon_oneshot.h"
+#include "boost_control.h" // Incluye donde esté tu función del DAC
 #include "oled.h"
+#include "tensOS.h"
+#include "buttons.h"
+#include "hbridge_driver.h"
+#include "buzzer.h"
+#include "settings.h"
+extern TensChannel_t ch_A; 
 
-static const char *TAG = "RGB_DEBUG";
 
-
-void app_main(void)
-{
+void app_main(void) {
+    //module initialization
+    init_nvs();
     display_init();
-    uint8_t color_state = 0; // 0: Rojo, 1: Verde, 2: Azul, 3: Blanco
+    display_show_logo();
+    adc_monitor_init();
+    rcfilter_init();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    boost_init();
+    buzzer_init();
+    buttons_init();
+    
+    // 3. Lanzar la interfaz y continuar con el resto del sistema
+    display_start_ui_task();
+    //charge_task();
+    xTaskCreate( 
+        os_control_task,    
+        "ControlTask",          // Debug TAG
+        4096,                   // stack size
+        NULL,                   // pvParameters 
+        10,                     // Priority
+        NULL                   // Handle
+    );
 
-    ESP_LOGI(TAG, "Iniciando ciclo de colores en el LED");
-
+    xTaskCreate(buttons_task, "ButtonsTask", 4096, NULL, 4, NULL);
     while (1) {
-        switch (color_state) {
-            case 0: // Rojo
-                display_charge_shutdown_warning() ;
-                ESP_LOGI(TAG, "Color: ROJO");
-                break;
-            case 1: // Verde
-                display_low_battery_warning();
-                ESP_LOGI(TAG, "Color: VERDE");
-                break;
-            case 2: // Azul
-                draw_init();
-                ESP_LOGI(TAG, "Color: AZUL");
-                break;
-        }
-
-
-
-        // Incrementar estado y resetear al llegar a 4
-        color_state = (color_state + 1) % 3;
-
-        // Esperar un segundo antes del siguiente cambio
         vTaskDelay(pdMS_TO_TICKS(1000));
-        
-        // Opcional: Si quieres que se apague entre colores, añade un clear aquí
-        // ESP_ERROR_CHECK(led_strip_clear(led_strip));
-        // vTaskDelay(pdMS_TO_TICKS(200));
+        ESP_LOGI("MAIN", "current in A: %f", ch_A.current);
     }
 }
+
+

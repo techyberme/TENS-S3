@@ -11,6 +11,7 @@
 typedef enum {
     CHAN_RUNNING,               
     CHAN_STBY,
+    CHAN_WAIT,
     CHAN_RECOVER,  
 } ChannelStatus_t;
 //Channel's structure
@@ -26,6 +27,7 @@ typedef struct {
     uint8_t low_current_cnt;
     uint8_t recovery_counter;
     uint32_t last_poll_time;
+    uint32_t disconnect_time;
     bool pulse_active;
     ChannelStatus_t status;
 } TensChannel_t;

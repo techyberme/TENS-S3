@@ -19,11 +19,12 @@ void app_main(void) {
     display_init();
     display_show_logo();
     //adc_monitor_init();
+    rcfilter_init();
+    vTaskDelay(pdMS_TO_TICKS(3000));
     boost_init();
     //buzzer_init();
     buttons_init();
-    rcfilter_init();
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    
     // 3. Lanzar la interfaz y continuar con el resto del sistema
     display_start_ui_task();
     //charge_task();

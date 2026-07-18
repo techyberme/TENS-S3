@@ -272,6 +272,7 @@ void hbridge_start(char channel){
      ESP_LOGI(TAG, "starting");
     //enable A and forcing is turned off
     if (channel == 'A'){
+        ESP_LOGI(TAG, "starting A");
         en_A = true;
         mcpwm_generator_set_force_level(generators[0], -1, true);
         mcpwm_generator_set_force_level(generators[1], -1, true);
@@ -319,7 +320,10 @@ void hbridge_deinit(void) {
         mcpwm_del_generator(gen_or);
         gen_or = NULL;
     }
-
+if (gen_or_b) {
+        mcpwm_del_generator(gen_or_b);
+        gen_or = NULL;
+    }
     // Destroy comparators
     for (int i = 0; i < 2; i++) {
         if (comparators[i]) {

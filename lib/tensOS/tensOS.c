@@ -19,11 +19,11 @@ volatile SystemState_t current_state = STATE_INIT;
 extern float batt_percentage;
 SystemState_t last_state = STATE_ZERO;
 static uint32_t doctor_timer = 0;
-static uint32_t disconnected_timer = 0;
 static uint32_t acc_timer = 0;
 static uint32_t session_seconds_sampled = 0;
 static uint32_t level_A_accumulator = 0;
 static uint32_t level_B_accumulator = 0;
+float margin = 0;
 volatile int program = 1;
 static int recovery_level = RECOVER_LEVEL; 
 //Enable boost
@@ -116,7 +116,7 @@ void os_control_task(void *pvParameters) {
             if (current_state == STATE_PROGRAM) {
                 display_set_state(SCREEN_CONFIG_PROG);
                 ESP_LOGI("LED", "TURNING LED ON");
-                update_led(ERR_NONE);
+                //update_led(ERR_NONE);
                 program = 1; 
             }  
             if (current_state == STATE_FUNC) {
@@ -166,6 +166,15 @@ void os_control_task(void *pvParameters) {
                     volatile TensChannel_t* ch = channels[i];
                     //Take the other channel w/ XOR
                     volatile TensChannel_t* other_ch = channels[i ^ 1];
+                    bool working_A = (ch_A.applied_level != 0);
+                    bool working_B = (ch_B.applied_level != 0);
+                    float margin = 0.0f;
+                    if (working_A && working_B) {
+                        margin = (ch_A.voltage < ch_B.voltage) ? ch_A.voltage : ch_B.voltage;
+                    } else {
+                        margin = working_A ? ch_A.voltage : (working_B ? ch_B.voltage : 0.0f);
+                    }
+                    uint32_t current_time = esp_log_timestamp();
                     if (ch->status == CHAN_RUNNING){
                         if (ch->level == 0) {
                             hbridge_stop(ch->id);
@@ -197,76 +206,110 @@ void os_control_task(void *pvParameters) {
                             set_DAC_value(ch->level, ch->id);
                             ch->was_silenced = false;
                         }
-
-                        // if (ch->current < 1.0f) {
-                        //     ch->low_current_cnt++;
-                        //     if (ch->low_current_cnt > 5) {
-                        //         set_DAC_value(0, ch->id);
-                        //         //hbridge_stop(ch->id);                                
-                        //         ESP_LOGW(TAG, "Electrodos desconectados en canal %c", ch->id);
-                                
-                        //         ch->saved_level = ch->level;
-                        //         ch->status = CHAN_STBY;
-                        //     }
-                        // } else {
-                        //     ch->low_current_cnt = 0;
-                        // }
+                        //ELECTRODE DETECTION
+                        if (margin < 0.5f && ch->level != 0) {
+                            ch->low_current_cnt++;
+                            if (ch->low_current_cnt > 5) {
+                                set_DAC_value(0, ch->id);                              
+                                ESP_LOGW(TAG, "Electrodos desconectados en canal %c", ch->id);
+                                display_set_state(SCREEN_ELECTRODES);
+                                buzzer_alarm();
+                                ch->saved_level = ch->level;
+                                ch->disconnect_time = current_time;
+                                other_ch->saved_level = other_ch->level;
+                                ch->status = CHAN_STBY;
+                                //Stop other channel if it's running
+                                if (other_ch->status == CHAN_RUNNING && other_ch->level > 0) {
+                                    set_DAC_value(0, other_ch->id);
+                                    other_ch->saved_level = other_ch->level;
+                                    other_ch->status = CHAN_WAIT;
+                                    ESP_LOGI(TAG, "Canal %c entra en espera por seguridad.", other_ch->id);
+                                }
+                            }
+                        } else {
+                            ch->low_current_cnt = 0;
+                        }
 
                     }
                 
                 //if in standby
                     else if (ch->status == CHAN_STBY){
-                    uint32_t current_time = esp_log_timestamp();
-                    //Auxiliary variable to avoid calling the DAC too soon.
-                    if (!ch->pulse_active) {
-                        if (current_time - ch->last_poll_time > 500) {
-                            set_DAC_value(recovery_level, ch->id); // Initiate a 6 mA pulse to check for contact
-                            ch->pulse_active = true;
-                            ch->last_poll_time = current_time;
-                            disconnected_timer++;
-                        }
-                    } else {
-                        // 20 ms after the pulse starts, check the current
-                        if (ch->current > 1.0f) {
-                            ch->recovery_counter++;
-                            disconnected_timer = 0;
-                        } else {
-                            ch->recovery_counter = 0;
+                  //Auxiliary variable to avoid calling the DAC too soon.
+                        if (ch->pulse_active) {
+                            // 20 ms after the pulse starts, check the current
+                            if (margin > 1.f) {
+                                ch->recovery_counter++;
+                                ch->disconnect_time = current_time;
+                            } else {
+                                ch->recovery_counter = 0;
+
+                            }
                             set_DAC_value(0, ch->id); //stop pulse
-                            ch->pulse_active = false;
-                        }
-                    
-                        if (ch->recovery_counter >= 3) {
-                            ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
-                            ch->level= recovery_level;  //recovery level
-                            set_DAC_value(ch->level,ch->id);
-                            ch->status = CHAN_RECOVER; 
-                            ch->recovery_counter = 0;
-                            ch->pulse_active = false;
+                            ch->pulse_active = false; 
+                            if (ch->recovery_counter >= 3) {
+                                ESP_LOGI(TAG, "Contacto detectado. Iniciando rampa de recuperación...");
+                                ch->level = recovery_level;  //recovery level
+                                set_DAC_value(ch->level,ch->id);
+                                ch->status = CHAN_RECOVER; 
+                                ch->recovery_counter = 0;
+                                ch->pulse_active = false;
+
+                                //wake the other channel up
+                                if (other_ch->status == CHAN_WAIT) {
+                                        other_ch->level = recovery_level;
+                                        set_DAC_value(other_ch->level, other_ch->id);
+                                        other_ch->status = CHAN_RECOVER;
+                                        other_ch->last_poll_time = current_time;
+                                    }
+                            }
+                            
+                            }
+                        else {
+                            if (current_time - ch->last_poll_time > 500) {
+                                set_DAC_value(recovery_level, ch->id); // Initiate a 6 mA pulse to check for contact
+                                ch->pulse_active = true;
+                                ch->last_poll_time = current_time;
+                            }
+                        } 
+                        //Timeout
+                        if (current_time - ch->disconnect_time >= 10000){ //after 10 seconds
+                            boost_stop(ERR_OPEN_CIRCUIT);
+                            EN_PWR = false;
+                            display_set_state(SCREEN_SLEEP);
+                            current_state = STATE_DONE;
                         }
                     }
-                    if (disconnected_timer >= 30){ //after 30 seconds
-                        boost_stop(ERR_OPEN_CIRCUIT);
-                        EN_PWR = false;
-                        current_state = STATE_DONE;
-                    }
-                }
                     else if (ch->status == CHAN_RECOVER){
                         if (ch->level < ch->saved_level){
-                            ch->level += 1; //recovery ramp
-                            set_DAC_value(ch->level, ch->id);
-                            if (ch->current < 1.0f) { 
+                            if (current_time - ch->last_poll_time >= 200) {
+                                ch->level += 1; //recovery ramp
+                                set_DAC_value(ch->level, ch->id);
+                                ch->last_poll_time = current_time;
+                            }
+                        }
+                            if (margin < 0.5f) { 
                                 // If contact is lost, go back to standby.
                                 ESP_LOGI(TAG, "Contacto perdido durante recuperación");
                                 set_DAC_value(0, ch->id);
+                                ch->disconnect_time = current_time;
                                 ch->status = CHAN_STBY;
+                                ch->pulse_active = false;
+                                //notify other channel
+                                if (other_ch->status == CHAN_RECOVER) {
+                                    set_DAC_value(0, other_ch->id);
+                                    other_ch->status = CHAN_WAIT;
+                                }
                             }
+                        
+                    else{
+                        ESP_LOGI(TAG, "Recuperación finalizada, el nivel es %d", ch->level);
+                        ch->status = CHAN_RUNNING;
+                        display_set_state(SCREEN_RUNNING);
+                        }
+                      
                 }
-                else{
-                    ESP_LOGI(TAG, "Recuperación finalizada, el nivel es %d", ch->level);
-                    ch->status = CHAN_RUNNING;
-
-                }
+                else if (ch->status == CHAN_WAIT){
+                        set_DAC_value(0, ch->id); 
                     }
                 }
                 if (ch_A.status == CHAN_RUNNING || ch_B.status == CHAN_RUNNING){
@@ -290,7 +333,7 @@ void os_control_task(void *pvParameters) {
                     avg_A = (uint8_t)(level_A_accumulator / session_seconds_sampled);
                     avg_B = (uint8_t)(level_B_accumulator / session_seconds_sampled);
                 }
-
+                
                 // save to flash
                 write_stats(program, session_seconds_sampled/60 , avg_A, avg_B);
 
@@ -300,8 +343,9 @@ void os_control_task(void *pvParameters) {
                 session_seconds_sampled = 0;
                 ESP_LOGI(TAG, "Programa finalizado");
                 current_state = STATE_INIT; 
+                
                 //Trigger Deep Sleep
-                esp_sleep_enable_ext1_wakeup(1ULL <<OK_GPIO, ESP_EXT1_WAKEUP_ALL_LOW);
+                esp_sleep_enable_ext1_wakeup(1ULL <<OK_GPIO, ESP_EXT1_WAKEUP_ANY_LOW);
                 esp_deep_sleep_start();
                 break;
             case STATE_LOW_BATTERY:

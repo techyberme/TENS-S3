@@ -119,7 +119,7 @@ static void draw_time_screen() {
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    //if ((now / 500) % 2 == 0){
+    if ((now / 500) % 2 == 0){
         // Valor de los minutos (Grande)
         int mins = duration_session;
         int secs = 0;
@@ -128,7 +128,7 @@ static void draw_time_screen() {
         int text_width = u8g2_GetStrWidth(&u8g2, buf);
         int x_centered = (128 - text_width) / 2;
         u8g2_DrawStr(&u8g2, x_centered, 58, buf);
-        //}
+        }
 
     // Guía para el usuario en la parte inferior
     u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
@@ -154,7 +154,7 @@ static void draw_config_prog() {
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    //if ((now / 500) % 2 == 0){
+    if ((now / 500) % 2 == 0){
         // Valor de los minutos (Grande)
         u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
         snprintf(buf, sizeof(buf), "%02d", program);
@@ -163,7 +163,7 @@ static void draw_config_prog() {
         int x_centered = (128 - text_width) / 2;
         
         u8g2_DrawStr(&u8g2, x_centered, 58, buf);
-     //   }
+        }
 
     // Guía para el usuario en la parte inferior
     u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
@@ -188,11 +188,11 @@ static void draw_doctor_freq(){
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    //if ((now / 250) % 2 == 0){
+    if ((now / 250) % 2 == 0){
         u8g2_SetFont(&u8g2, u8g2_font_helvB14_tr);
         sprintf(buf, "%lu Hz", doc_setup_freq);
         u8g2_DrawStr(&u8g2, 30, 58, buf);  
-      //  }
+        }
 
     // Guía para el usuario en la parte inferior
     u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
@@ -217,7 +217,7 @@ static void draw_doctor_mode(){
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-   // if ((now / 250) % 2 == 0){
+    if ((now / 250) % 2 == 0){
         // Valor de los minutos (Grande)
         u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr);
         if (doc_setup_mode == 1) sprintf(buf, "%s", "BURST");
@@ -226,7 +226,7 @@ static void draw_doctor_mode(){
         int x_centered = (128 - text_width) / 2;
         
         u8g2_DrawStr(&u8g2, x_centered, 58, buf); 
-     //   }
+       }
         
 
     // Guía para el usuario en la parte inferior
@@ -251,12 +251,12 @@ static void draw_doctor_burst(){
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    //if ((now / 250) % 2 == 0){
+    if ((now / 250) % 2 == 0){
         // Valor de los minutos (Grande)
         u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr);
         sprintf(buf, "%lu Hz", doc_setup_burst);
         u8g2_DrawStr(&u8g2, 30, 58, buf);  
-     //   }
+       }
 
     // Guía para el usuario en la parte inferior
     u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
@@ -281,18 +281,18 @@ static void draw_main_ui()
 
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    //if (button_state == UNLOCKED_STATE_A){
+    if (button_state == UNLOCKED_STATE_A){
         if ((now / 250) % 2 == 0){
          // Level A
         sprintf(buf, "%d",ch_A.level);
         u8g2_DrawStr(&u8g2, 15, 42, buf);  
         }
-   // }
-    //else{
+    }
+    else{
          // Level A
     sprintf(buf, "%d",ch_A.level);
     u8g2_DrawStr(&u8g2, 15, 42, buf);
-    //}
+    }
     if (button_state == UNLOCKED_STATE_B){
         if ((now / 250) % 2 == 0){
          // Level B
@@ -304,6 +304,8 @@ static void draw_main_ui()
          // Level B
         sprintf(buf, "%d",ch_B.level);
         u8g2_DrawStr(&u8g2, 85, 42, buf);
+        
+        
     }
 
                   
@@ -346,6 +348,9 @@ static void display_task(void *pvParameters) {
                     break;  
                 case SCREEN_BATTERY:
                     break; 
+                case SCREEN_ELECTRODES:
+                    display_electrodes_warning();
+                    break;
                 case SCREEN_DOCTOR_MODE:
                     draw_doctor_mode();
                     break;
@@ -358,12 +363,15 @@ static void display_task(void *pvParameters) {
                 case SCREEN_DOCTOR_INIT:
                     draw_doctor_init();
                     break;
+                case SCREEN_SLEEP:
+                    display_tens_shutdown();
+                    break;
             }
         
         if (current_state != past_state) {
             
             // The buffer now contains the first frame of the new UI state
-            dumpScreenToSerial(&u8g2);
+            //dumpScreenToSerial(&u8g2);
             
             // Update past_state so this block doesn't trigger again until the next change
             past_state = current_state; 
@@ -396,7 +404,7 @@ void display_low_battery_warning() {
     u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
 
     u8g2_SendBuffer(&u8g2);
-    dumpScreenToSerial(&u8g2);
+    //dumpScreenToSerial(&u8g2);
 }
 
 void display_charge_shutdown_warning() {
@@ -417,7 +425,47 @@ void display_charge_shutdown_warning() {
     u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
 
     u8g2_SendBuffer(&u8g2);
-    dumpScreenToSerial(&u8g2);
+    //dumpScreenToSerial(&u8g2);
+}
+
+void display_tens_shutdown(void) {
+    u8g2_ClearBuffer(&u8g2);
+ 
+    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_DrawGlyph(&u8g2, 48, 32, 70); 
+
+
+    u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
+    const char* str1 = "TENS APAGADO"; 
+    int width1 = u8g2_GetStrWidth(&u8g2, str1);
+    u8g2_DrawStr(&u8g2, (128 - width1) / 2, 48, str1);
+
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); 
+    const char* str2 = "Pulse OK para encender"; 
+    int width2 = u8g2_GetStrWidth(&u8g2, str2);
+    u8g2_DrawStr(&u8g2, (128 - width2) / 2, 62, str2);
+
+    u8g2_SendBuffer(&u8g2);
+}
+void display_electrodes_warning(void) {
+    u8g2_ClearBuffer(&u8g2);
+
+    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_DrawGlyph(&u8g2, 48, 32, 65); 
+
+  
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); 
+    const char* str1 = "ELECTRODOS SUELTOS"; 
+    int width1 = u8g2_GetStrWidth(&u8g2, str1);
+    u8g2_DrawStr(&u8g2, (128 - width1) / 2, 48, str1);
+
+
+    u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
+    const char* str2 = "ESPERANDO"; 
+    int width2 = u8g2_GetStrWidth(&u8g2, str2);
+    u8g2_DrawStr(&u8g2, (128 - width2) / 2, 64, str2);
+
+    u8g2_SendBuffer(&u8g2);
 }
 
 static void draw_doctor_init() {
@@ -448,34 +496,41 @@ void draw_init(void) {
     u8g2_DrawStr(&u8g2, x_centered, 60, buf);
     
     u8g2_SendBuffer(&u8g2);
-    dumpScreenToSerial(&u8g2);
+    //dumpScreenToSerial(&u8g2);
 }
-void draw_config_lev(uint32_t duty_cycle){
+void draw_config_lev(float voltage, float current_ma, uint8_t dac_value) {
     char buf[16];
     
     u8g2_ClearBuffer(&u8g2);
     
-    // Title
+    // 1. Título e hilo de separación
     u8g2_SetFont(&u8g2, u8g2_font_6x12_tr);
     u8g2_DrawStr(&u8g2, 0, 10, "CONFIGURACION");
     u8g2_DrawHLine(&u8g2, 0, 12, 128);
 
-    // Central Tag
-    u8g2_SetFont(&u8g2, u8g2_font_helvB10_tr); 
-    const char* tag_text = "Programa";
+    // 2. Etiqueta Central
+    u8g2_SetFont(&u8g2, u8g2_font_6x10_tr); 
+    const char* tag_text = "Ciclo Trabajo";
     int tag_width = u8g2_GetStrWidth(&u8g2, tag_text);
-    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 30, tag_text);
+    u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 24, tag_text);
 
-    // Valor de los minutos (Grande)
-    u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
-    snprintf(buf, sizeof(buf), "%lu", duty_cycle);
-    
+    // 3. Valor del Duty Cycle (Grande, centrado)
+    u8g2_SetFont(&u8g2, u8g2_font_helvB18_tr); 
+    snprintf(buf, sizeof(buf), "%.1f", voltage);
     int text_width = u8g2_GetStrWidth(&u8g2, buf);
-    int x_centered = (128 - text_width) / 2;
+    u8g2_DrawStr(&u8g2, (128 - text_width) / 2, 45, buf);
+
+    // 4. Fila Inferior de Diagnóstico (Dividida en dos columnas)
+    u8g2_SetFont(&u8g2, u8g2_font_5x8_tr); // Fuente compacta pero muy legible para datos secundarios
     
-    u8g2_DrawStr(&u8g2, x_centered, 58, buf);
+    // Columna Izquierda: Valor del DAC (0-255)
+    snprintf(buf, sizeof(buf), "DAC: %u", dac_value);
+    u8g2_DrawStr(&u8g2, 4, 62, buf); // Alineado a la izquierda con un pequeño margen de 4px
+
+    // Columna Derecha: Corriente medida (mA)
+    snprintf(buf, sizeof(buf), "I: %.1f mA", current_ma);
+    int current_width = u8g2_GetStrWidth(&u8g2, buf);
+    u8g2_DrawStr(&u8g2, 124 - current_width, 62, buf); // Alineado a la derecha con margen de 4px
 
     u8g2_SendBuffer(&u8g2);
-    dumpScreenToSerial(&u8g2);
-    
 }
