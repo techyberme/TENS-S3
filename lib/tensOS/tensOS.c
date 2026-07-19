@@ -346,7 +346,7 @@ void os_control_task(void *pvParameters) {
                 ESP_LOGI(TAG, "Session Ended!");
                 //Wait to make sure message is sent
                 vTaskDelay(pdMS_TO_TICKS(5000));
-                esp_sleep_enable_ext1_wakeup(1ULL << OK_GPIO, ESP_EXT1_WAKEUP_ALL_LOW);
+                esp_sleep_enable_ext1_wakeup(1ULL << OK_GPIO, ESP_EXT1_WAKEUP_ANY_LOW);
                 esp_deep_sleep_start();
               
                 break;

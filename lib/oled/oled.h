@@ -29,5 +29,6 @@ void display_low_battery_warning(void);
 void display_charge_shutdown_warning();
 void draw_config_lev(uint32_t duty_cycle);
 void draw_init(void) ;
-
+void draw_sens_treat(int ses);
+void draw_sens_day(int day);
 #endif

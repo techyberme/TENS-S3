@@ -17,8 +17,8 @@ static ui_state_t past_state = SCREEN_LOGO;
 static const char* TAG = "OLED";
 static u8g2_t u8g2;
 extern uint32_t time_session;
-extern volatile uint8_t day_score = 0;
-extern volatile uint8_t sess_score = 0;
+// extern volatile uint8_t day_score;
+// extern volatile uint8_t sess_score;
 volatile extern uint32_t duration_session;
 volatile extern int program;
 extern TensChannel_t ch_A;
@@ -359,10 +359,10 @@ static void display_task(void *pvParameters) {
                     draw_doctor_init();
                     break;
                 case SCREEN_SURV_DAY:
-                    draw_sens_day();
+                    //draw_sens_day();
                     break;
                 case SCREEN_SURV_SESS:
-                    draw_sens_treat();
+                    //draw_sens_treat();
                     break;
             }
         
@@ -485,7 +485,7 @@ void draw_config_lev(uint32_t duty_cycle){
     
 }
 
-static void draw_sens_day() {
+void draw_sens_day(int day_score) {
     char buf[16];
     
     u8g2_ClearBuffer(&u8g2);
@@ -501,15 +501,15 @@ static void draw_sens_day() {
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 32, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    if ((now / 500) % 2 == 0){
+    //if ((now / 500) % 2 == 0){
         u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
-        snprintf(buf, sizeof(buf), "%02u", sess_score);
+        snprintf(buf, sizeof(buf), "%u", day_score);
         
         int text_width = u8g2_GetStrWidth(&u8g2, buf);
         int x_centered = (128 - text_width) / 2;
         
         u8g2_DrawStr(&u8g2, x_centered, 58, buf);
-    }
+    //}
 
     u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
     u8g2_DrawStr(&u8g2, 0, 64, "[-]                   [+]");
@@ -517,7 +517,7 @@ static void draw_sens_day() {
     u8g2_SendBuffer(&u8g2);
 }
 
-static void draw_sens_treat() {
+void draw_sens_treat(int sess_score) {
     char buf[16];
     
     u8g2_ClearBuffer(&u8g2);
@@ -533,15 +533,15 @@ static void draw_sens_treat() {
     u8g2_DrawStr(&u8g2, (128 - tag_width) / 2, 32, tag_text);
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     //Blinking
-    if ((now / 500) % 2 == 0){
+    //if ((now / 500) % 2 == 0){
         u8g2_SetFont(&u8g2, u8g2_font_helvB24_tr);
-        snprintf(buf, sizeof(buf), "%02u", day_score);
+        snprintf(buf, sizeof(buf), "%u", sess_score);
         
         int text_width = u8g2_GetStrWidth(&u8g2, buf);
         int x_centered = (128 - text_width) / 2;
         
         u8g2_DrawStr(&u8g2, x_centered, 58, buf);
-    }
+    //}
 
     u8g2_SetFont(&u8g2, u8g2_font_5x7_tr);
     u8g2_DrawStr(&u8g2, 0, 64, "[-]                   [+]");

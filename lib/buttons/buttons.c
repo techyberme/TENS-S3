@@ -301,7 +301,7 @@ void buttons_task(void *pvParameters) {
                     current_state = SURV_SESS;
                 }
                 if (inactivity_counter > LOCK_TIMEOUT_TICKS * 4) {
-                                day_score   = NULL;  
+                                day_score   = 6;  
                                 inactivity_counter = 0;
                                 current_state = SURV_SESS;
                                 beep(200);
@@ -332,7 +332,7 @@ void buttons_task(void *pvParameters) {
                     current_state = STATE_DONE;
                 }
                 if (inactivity_counter > LOCK_TIMEOUT_TICKS) {
-                                sess_score = NULL;
+                                sess_score = 6;
                                 inactivity_counter = 0;
                                 beep(200);
                                 ESP_LOGI(TAG, "User did not respond to the enquiries");

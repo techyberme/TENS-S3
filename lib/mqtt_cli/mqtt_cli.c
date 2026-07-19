@@ -139,8 +139,8 @@ bool mqtt_cli_publish_telemetry(const char *json_payload) {
     char topic[40]; 
 
     snprintf(topic, sizeof(topic), "tens/%s/sessions", uuid);
-    // Publicación con QoS 1 (Al menos una vez) para asegurar la llegada del dato médico.
-    // El último '0' indica que el mensaje no es 'retained'.
+    ESP_LOGI(TAG, "UUID is %c", uuid);
+    // publish message with QoS 1 and no retain
     esp_mqtt_client_publish(mqtt_client, topic, json_payload, 0, 1, 0);
     return true;
 }

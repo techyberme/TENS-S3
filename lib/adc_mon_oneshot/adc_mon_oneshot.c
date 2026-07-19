@@ -33,7 +33,7 @@ bool isCharging = false;
 static const char *TAG = "ADC";
 static adc_cali_handle_t cali_handle = NULL;
 //variable to signal deinit
-s_monitor_bool = false;
+bool s_monitor_bool = false;
 adc_oneshot_unit_handle_t adc2_handle;
 static TaskHandle_t s_monitor_task_handle = NULL; 
  
