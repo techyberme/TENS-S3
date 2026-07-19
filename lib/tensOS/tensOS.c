@@ -343,7 +343,10 @@ void os_control_task(void *pvParameters) {
                 session_seconds_sampled = 0;
                 ESP_LOGI(TAG, "Programa finalizado");
                 current_state = STATE_INIT; 
-                
+                //shutdown screen
+                display_tens_shutdown();
+                vTaskDelay(pdMS_TO_TICKS(500));
+
                 //Trigger Deep Sleep
                 esp_sleep_enable_ext1_wakeup(1ULL <<OK_GPIO, ESP_EXT1_WAKEUP_ANY_LOW);
                 esp_deep_sleep_start();
