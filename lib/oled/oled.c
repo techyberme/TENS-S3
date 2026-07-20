@@ -548,3 +548,22 @@ void draw_sens_treat(int sess_score) {
     
     u8g2_SendBuffer(&u8g2);
 }
+void display_tens_shutdown(void) {
+    u8g2_ClearBuffer(&u8g2);
+ 
+    u8g2_SetFont(&u8g2, u8g2_font_open_iconic_embedded_4x_t);
+    u8g2_DrawGlyph(&u8g2, 48, 32, 70); 
+
+
+    u8g2_SetFont(&u8g2, u8g2_font_9x15_tf); 
+    const char* str1 = "TENS APAGADO"; 
+    int width1 = u8g2_GetStrWidth(&u8g2, str1);
+    u8g2_DrawStr(&u8g2, (128 - width1) / 2, 48, str1);
+
+    u8g2_SetFont(&u8g2, u8g2_font_6x12_tr); 
+    const char* str2 = "Pulse OK para encender"; 
+    int width2 = u8g2_GetStrWidth(&u8g2, str2);
+    u8g2_DrawStr(&u8g2, (128 - width2) / 2, 62, str2);
+
+    u8g2_SendBuffer(&u8g2);
+}

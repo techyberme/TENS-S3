@@ -13,7 +13,8 @@ extern bool connected;
 typedef enum {
     DAY_STATE,
     SESS_STATE,  // Esperando los 5 segundos de pulsación
-    STATE_END
+    STATE_END,
+    STATE_BASE
 } main_state_t;
 main_state_t main_state = DAY_STATE;
 int day = 0;
@@ -118,9 +119,8 @@ void app_main(void) {
                 break;
             case STATE_END:
 
-                
                 mqtt_msg_t session_payload = {
-                    .program_id= esp_random() % 3,
+                    .program_id= (esp_random() % 2) + 1,
                     .duration = esp_random() % 28,
                     .avg_intensity_ch_a = (esp_random() % 200) / 10.0f,
                     .avg_intensity_ch_b = (esp_random() % 200) / 10.0f,
@@ -135,10 +135,15 @@ void app_main(void) {
                     }
                     free(payload); 
                 }
-                esp_sleep_enable_ext1_wakeup(1ULL << OK_GPIO, ESP_EXT1_WAKEUP_ANY_LOW);
-                esp_deep_sleep_start();
-              
+                display_tens_shutdown();
+                main_state = STATE_BASE;
                 break;
+            case STATE_BASE:
+                if (ok_trigger) {
+                    main_state = DAY_STATE;
+                    day = 0;
+                    sess = 0;
+                }
         }
     }
 }
